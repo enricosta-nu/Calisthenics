@@ -1,4 +1,4 @@
-// Personal routines made of timed blocks, plus the exercise glossary they use.
+// Personal routines made of timed blocks.
 //
 // Block kinds:
 //   interval — `rounds` passes through `items`; each item is `work` seconds (or item.secs),
@@ -10,65 +10,24 @@
 //
 // Items: { ex, reps? | secs? | text?, note? }, where `ex` is a key of EXERCISES.
 
-export const EXERCISES = {
-  'pull-up': { name: 'Pull-up', cue: 'Overhand grip, from dead hang to chin over bar.' },
-  'chin-up': { name: 'Chin-up', cue: 'Palms facing you, chin over the bar, full extension at the bottom.' },
-  'pull-up-iso': { name: 'Pull-up hold', cue: 'Hold with chin over the bar, shoulders down, elbows tight.' },
-  'chin-up-iso': { name: 'Chin-up hold', cue: 'Palms facing you, hold the top position.' },
-  'scapular-pull': { name: 'Scapular pull', cue: 'From a hang, pull shoulder blades down without bending arms.' },
-  'dead-hang': { name: 'Dead hang', cue: 'Straight arms, relaxed but active shoulders.' },
-  'active-hang': { name: 'Dynamic hang', cue: 'Hang and keep moving: shoulder shrugs, small swings, shifting weight.' },
-  'inverted-hang': { name: 'Inverted hang', cue: 'Hang upside down from the bar, body straight, controlled breathing.' },
-  'skin-the-cat': { name: 'Skin the cat', cue: 'From a hang, bring legs through your arms and back, rotating around the shoulders. Use low bars to start.' },
-  'australian': { name: 'Australian row', cue: 'Under a low bar, body straight, pull chest to the bar.' },
-  'australian-iso': { name: 'Australian row hold', cue: 'Hold the top of the row, chest at the bar.' },
-  'push-up': { name: 'Push-up', cue: 'Rigid plank, chest to the floor, full lockout.' },
-  'hindu-push-up': { name: 'Hindu push-up', cue: 'From downward dog, swoop the chest low and forward into upward dog, then back.' },
-  'pike-push-up': { name: 'Pike push-up', cue: 'Hips high, lower the head between the hands, press back up.' },
-  'pseudo-planche-push-up': { name: 'Pseudo planche push-up', cue: 'Hands by the hips, lean forward over the hands, push up.' },
-  'planche-lean': { name: 'Planche lean', cue: 'Push-up position, straight arms, lean shoulders well past the hands.' },
-  'hspu': { name: 'Handstand push-up', cue: 'Against the wall, lower head to the floor and press to lockout.' },
-  'handstand': { name: 'Handstand', cue: 'Stack wrists, shoulders and hips. Wall or freestanding.' },
-  'wall-handstand': { name: 'Wall handstand', cue: 'Chest facing the wall, hands close to it, body in one line.' },
-  'box-pike-handstand': { name: 'Box pike handstand', cue: 'Feet on a box by the wall, hips stacked over shoulders.' },
-  'plank': { name: 'Plank', cue: 'On the forearms, squeeze glutes, ribs down.' },
-  'hollow-hold': { name: 'Hollow hold', cue: 'Lower back glued to the floor, arms and legs extended.' },
-  'hollow-rock': { name: 'Hollow rock', cue: 'Hollow position, rock back and forth without losing the shape.' },
-  'leg-raise': { name: 'Leg raise', cue: 'Lying down, straight legs up to vertical and lower slowly.' },
-  'hanging-leg-raise': { name: 'Hanging leg raise', cue: 'From a hang, raise straight legs to 90° or higher. No swinging.' },
-  'windshield-wiper': { name: 'Hanging hip rotations', cue: 'Hanging with knees or legs up, rotate the hips side to side.' },
-  'side-leg-raise': { name: 'Side leg raise', cue: 'Lying on your side, raise the top leg with control.' },
-  'dragon-flag': { name: 'Dragon flag', cue: 'Lying on a bench, body straight from the shoulders, lower slowly.' },
-  'l-sit': { name: 'L-sit', cue: 'Straight arms, legs straight and parallel to the floor.' },
-  'dip': { name: 'Dip', cue: 'Parallel bars, shoulders below elbows, press to lockout.' },
-  'l-sit-dip': { name: 'L-sit dip', cue: 'Dip while holding the legs in an L.' },
-  'squat': { name: 'Squat', cue: 'Feet shoulder width, chest up, full depth.' },
-  'squat-jump': { name: 'Jump squat', cue: 'Full squat, explode up, land soft.' },
-  'pistol-squat': { name: 'Pistol squat', cue: 'Single leg, free leg straight in front. Alternate sides.' },
-  'sissy-squat': { name: 'Sissy squat', cue: 'On the balls of the feet, knees forward, lean back, hips extended.' },
-  'wall-sit': { name: 'Wall sit', cue: 'Back on the wall, thighs parallel to the floor.' },
-  'horse-stance': { name: 'Horse stance', cue: 'Wide stance, deep squat, back upright.' },
-  'lateral-lunge': { name: 'Lateral lunge', cue: 'Step wide to the side, sit into that hip, other leg straight.' },
-  'burpee': { name: 'Burpee', cue: 'Squat, jump feet back, chest to floor, jump feet in, jump up.' },
-  'leg-stretch': { name: 'Leg stretch', cue: 'Hamstrings and hips, breathe into it.' },
-  'stretching': { name: 'Stretching', cue: 'Full-body cool-down.' },
-  'rest': { name: 'Rest', cue: 'Breathe.' },
-};
+import { EXERCISES } from './exercises.js';
+
+export { EXERCISES };
 
 const item = (x) => (typeof x === 'string' ? { ex: x } : x);
 const r = (ex, reps, note) => ({ ex, reps, note });
 const s = (ex, secs, note) => ({ ex, secs, note });
 const t = (ex, text, note) => ({ ex, text, note });
 
-const interval = ({ rounds, work, rest = 0, roundRest = rest, title, note }, items) =>
+export const interval = ({ rounds, work, rest = 0, roundRest = rest, title, note }, items) =>
   ({ kind: 'interval', title, note, rounds, work, rest, roundRest, items: items.map(item) });
-const tabata = (items, { work = 20, rest = 10, rounds = 2, note } = {}) =>
+export const tabata = (items, { work = 20, rest = 10, rounds = 2, note } = {}) =>
   interval({ rounds, work, rest, roundRest: rest, title: 'Tabata', note }, items);
 // n × secs of one exercise with rest between.
 const holds = (ex, rounds, secs, rest = 30, note) => interval({ rounds, work: secs, rest, note }, [ex]);
-const amrap = (minutes, items, note) => ({ kind: 'amrap', minutes, note, items: items.map(item) });
-const emom = (every, rounds, items, note) => ({ kind: 'emom', every, rounds, note, items: items.map(item) });
-const circuit = (rounds, items, note) => ({ kind: 'circuit', rounds, note, items: items.map(item) });
+export const amrap = (minutes, items, note) => ({ kind: 'amrap', minutes, note, items: items.map(item) });
+export const emom = (every, rounds, items, note) => ({ kind: 'emom', every, rounds, note, items: items.map(item) });
+export const circuit = (rounds, items, note) => ({ kind: 'circuit', rounds, note, items: items.map(item) });
 
 export const ROUTINES = [
   {
