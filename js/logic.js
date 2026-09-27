@@ -1,5 +1,6 @@
 // Pure state logic: no DOM access, so it can be unit-tested with `node --test`.
 import { TRACKS, TEMPLATES, trackById } from './data.js';
+import { routineById, EXERCISES } from './routines.js';
 
 export const STORAGE_KEY = 'calisthenics.v1';
 
@@ -9,6 +10,7 @@ export function defaultState() {
     levels: Object.fromEntries(TRACKS.map((t) => [t.id, 0])),
     sessions: [],
     active: null,
+    activeRoutine: null,
     settings: { rest: 90, sound: true },
   };
 }
@@ -27,11 +29,17 @@ export function normalizeState(raw) {
     levels,
     sessions: Array.isArray(raw.sessions) ? raw.sessions.filter(isSession) : [],
     active: raw.active && Array.isArray(raw.active.exercises) ? raw.active : null,
+    activeRoutine: isActiveRoutine(raw.activeRoutine) ? raw.activeRoutine : null,
     settings: {
       rest: Number.isFinite(raw.settings?.rest) ? clamp(raw.settings.rest, 15, 600) : base.settings.rest,
       sound: typeof raw.settings?.sound === 'boolean' ? raw.settings.sound : base.settings.sound,
     },
   };
+}
+
+function isActiveRoutine(a) {
+  const routine = a && routineById[a.id];
+  return Boolean(routine && Array.isArray(a.results) && a.results.length === routine.blocks.length);
 }
 
 function isSession(s) {
@@ -186,4 +194,118 @@ export function formatDuration(ms) {
 export function formatClock(seconds) {
   const s = Math.max(0, Math.ceil(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// ---------- personal routines (timed blocks) ----------
+
+export const READY_SECS = 10;
+
+const itemWork = (block, it) => it.secs ?? block.work;
+
+// The timeline of a timed block, starting with a short "get ready".
+// Returns null for untimed circuits.
+export function blockPhases(block) {
+  if (block.kind === 'circuit') return null;
+  const phases = [{ kind: 'ready', secs: READY_SECS, round: 1 }];
+  if (block.kind === 'amrap') {
+    phases.push({ kind: 'work', secs: block.minutes * 60, round: 1, items: block.items });
+  } else if (block.kind === 'emom') {
+    for (let round = 1; round <= block.rounds; round++) {
+      phases.push({ kind: 'work', secs: block.every, round, items: block.items });
+    }
+  } else {
+    for (let round = 1; round <= block.rounds; round++) {
+      block.items.forEach((it, i) => {
+        phases.push({ kind: 'work', secs: itemWork(block, it), round, item: it });
+        const lastOfRound = i === block.items.length - 1;
+        if (lastOfRound && round === block.rounds) return;
+        const rest = lastOfRound ? block.roundRest : block.rest;
+        if (rest > 0) phases.push({ kind: 'rest', secs: rest, round, next: lastOfRound ? block.items[0] : block.items[i + 1] });
+      });
+    }
+  }
+  return phases;
+}
+
+export function blockDuration(block) {
+  const phases = blockPhases(block);
+  if (!phases) return block.rounds * block.items.length * 30;
+  return phases.reduce((a, p) => a + p.secs, 0) - READY_SECS;
+}
+
+// Where `elapsed` seconds lands in the timeline. index === phases.length means finished.
+export function phaseAt(phases, elapsed) {
+  let start = 0;
+  for (let i = 0; i < phases.length; i++) {
+    const end = start + phases[i].secs;
+    if (elapsed < end) return { index: i, phase: phases[i], remaining: end - elapsed, into: elapsed - start };
+    start = end;
+  }
+  return { index: phases.length, phase: null, remaining: 0, into: 0 };
+}
+
+export function blockTitle(block) {
+  switch (block.kind) {
+    case 'amrap': return `AMRAP ${block.minutes} min`;
+    case 'emom': return block.every === 60 ? `EMOM ${block.rounds} min` : `Every ${formatClock(block.every)} × ${block.rounds}`;
+    case 'circuit': return block.rounds > 1 ? `${block.rounds} rounds` : 'At your pace';
+    default: {
+      const rest = block.rest ? ` / ${block.rest}s` : '';
+      return `${block.title ? `${block.title} · ` : ''}${block.rounds} × ${block.work}s${rest}`;
+    }
+  }
+}
+
+// Short name for a block, from its exercises.
+export function blockName(block) {
+  const names = block.items.map((it) => EXERCISES[it.ex].name);
+  if (block.kind === 'amrap') return `AMRAP ${block.minutes}'`;
+  if (block.kind === 'emom') return 'EMOM';
+  if (block.kind === 'circuit') return names.length === 1 ? names[0] : 'Circuit';
+  if (block.title) return block.title;
+  return names.join(' + ');
+}
+
+export function startRoutine(routine, now = Date.now()) {
+  return {
+    id: routine.id,
+    name: routine.name,
+    startedAt: now,
+    block: 0,
+    blockStartedAt: null,
+    pausedAt: null,
+    pausedMs: 0,
+    results: routine.blocks.map(() => ({ rounds: 0, status: 'todo' })),
+  };
+}
+
+// Seconds into the current block's timeline, or null if its timer hasn't started.
+export function routineElapsed(active, now = Date.now()) {
+  if (!active.blockStartedAt) return null;
+  return ((active.pausedAt ?? now) - active.blockStartedAt - active.pausedMs) / 1000;
+}
+
+export function resultText(block, res) {
+  if (block.kind === 'amrap' || block.kind === 'circuit') {
+    if (res.rounds) return `${res.rounds} round${res.rounds === 1 ? '' : 's'}`;
+  }
+  return { done: 'done', partial: 'partial', todo: 'skipped' }[res.status];
+}
+
+export function finishRoutine(state, routine, now = Date.now()) {
+  const a = state.activeRoutine;
+  if (!a) return { state, session: null };
+  const touched = a.results.some((res) => res.status !== 'todo' || res.rounds > 0);
+  const session = {
+    kind: 'routine',
+    routine: a.id,
+    name: a.name,
+    startedAt: a.startedAt,
+    endedAt: now,
+    exercises: [],
+    blocks: routine.blocks.map((b, i) => ({ name: blockName(b), title: blockTitle(b), result: resultText(b, a.results[i]) })),
+  };
+  const next = { ...state, activeRoutine: null };
+  if (touched) next.sessions = [...state.sessions, session];
+  return { state: next, session: touched ? session : null };
 }

@@ -1,7 +1,9 @@
 import { TRACKS, TEMPLATES, trackById } from './data.js';
+import { ROUTINES, EXERCISES, routineById } from './routines.js';
 import {
   STORAGE_KEY, defaultState, normalizeState, buildWorkout, finishWorkout, evaluate,
   sessionTotals, stats, trackHistory, lastPerformance, stepFor, formatDuration, formatClock, clamp,
+  blockPhases, blockDuration, blockTitle, blockName, phaseAt, startRoutine, routineElapsed, finishRoutine,
 } from './logic.js';
 
 // ---------- state ----------
@@ -14,6 +16,8 @@ const ui = {
   restEndsAt: null,
   summary: null, // { session, suggestions } shown after finishing
   openSession: null,
+  phaseKey: null, // "block:phase" of the routine timer, to detect phase changes
+  lastCount: null, // last 3-2-1 countdown second that beeped
 };
 
 function load() {
@@ -55,33 +59,55 @@ function toast(msg) {
 }
 
 let audio;
-function beep() {
-  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-  if (!state.settings.sound) return;
+// Must run inside a tap handler once, or mobile browsers keep audio muted.
+function unlockAudio() {
   try {
     audio ??= new (window.AudioContext || window.webkitAudioContext)();
-    [0, 0.25, 0.5].forEach((offset, i) => {
-      const o = audio.createOscillator();
-      const g = audio.createGain();
-      o.frequency.value = i === 2 ? 1320 : 880;
-      g.gain.setValueAtTime(0.25, audio.currentTime + offset);
-      g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + offset + 0.2);
-      o.connect(g).connect(audio.destination);
-      o.start(audio.currentTime + offset);
-      o.stop(audio.currentTime + offset + 0.2);
-    });
+    if (audio.state === 'suspended') audio.resume();
   } catch {
     /* audio not available */
   }
 }
 
+// notes: [frequency, offset seconds, duration seconds]
+const SOUNDS = {
+  count: { notes: [[660, 0, 0.08]], vibrate: 40 },
+  work: { notes: [[1320, 0, 0.15], [1320, 0.2, 0.3]], vibrate: [150, 80, 150] },
+  rest: { notes: [[523, 0, 0.35]], vibrate: 300 },
+  done: { notes: [[880, 0, 0.2], [880, 0.25, 0.2], [1320, 0.5, 0.4]], vibrate: [200, 100, 200, 100, 400] },
+};
+
+function play(name) {
+  const { notes, vibrate } = SOUNDS[name];
+  if (navigator.vibrate) navigator.vibrate(vibrate);
+  if (!state.settings.sound) return;
+  try {
+    unlockAudio();
+    for (const [freq, offset, dur] of notes) {
+      const o = audio.createOscillator();
+      const g = audio.createGain();
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.25, audio.currentTime + offset);
+      g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + offset + dur);
+      o.connect(g).connect(audio.destination);
+      o.start(audio.currentTime + offset);
+      o.stop(audio.currentTime + offset + dur);
+    }
+  } catch {
+    /* audio not available */
+  }
+}
+
+const beep = () => play('done');
+
 let wakeLock = null;
 async function syncWakeLock() {
   try {
-    if (state.active && !wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible') {
+    const training = state.active || state.activeRoutine;
+    if (training && !wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible') {
       wakeLock = await navigator.wakeLock.request('screen');
       wakeLock.addEventListener('release', () => (wakeLock = null));
-    } else if (!state.active && wakeLock) {
+    } else if (!training && wakeLock) {
       await wakeLock.release();
     }
   } catch {
@@ -114,6 +140,7 @@ function render() {
 }
 
 function renderTrain() {
+  if (state.activeRoutine) return renderRoutine();
   return state.active ? renderWorkout() : renderPicker();
 }
 
@@ -142,9 +169,194 @@ function renderPicker() {
       <div class="tile"><b>${s.weekStreak}</b><span>week streak</span></div>
       <div class="tile"><b>${s.total}</b><span>workouts</span></div>
     </section>
-    <h2>Choose a workout</h2>
+    <h2>My workouts</h2>
+    ${renderRoutineCards()}
+    <h2>Skill ladder workouts</h2>
     ${cards}
     <p class="muted small">Exercises come from your current step on each skill ladder. Hit the top of the range on every set and you'll be offered the next step.</p>`;
+}
+
+function renderRoutineCards() {
+  const lastDone = {};
+  let lastId = null;
+  for (const sess of state.sessions) {
+    if (sess.kind !== 'routine') continue;
+    lastDone[sess.routine] = sess.startedAt;
+    lastId = sess.routine;
+  }
+  const lastIdx = ROUTINES.findIndex((rt) => rt.id === lastId);
+  const upNext = ROUTINES[(lastIdx + 1) % ROUTINES.length].id;
+  return ROUTINES.map((rt) => {
+    const mins = Math.round(rt.blocks.reduce((a, b) => a + blockDuration(b), 0) / 60);
+    return `
+      <article class="card ${rt.id === upNext ? 'up-next' : ''}">
+        <div class="row between">
+          <div>
+            ${rt.id === upNext ? '<p class="eyebrow">Up next</p>' : ''}
+            <h3>${esc(rt.name)}</h3>
+            <p class="muted small">~${mins} min · ${rt.blocks.length} blocks${lastDone[rt.id] ? ` · last ${fmtDate(lastDone[rt.id])}` : ''}</p>
+          </div>
+          <button class="btn primary" data-action="rt-begin" data-id="${rt.id}">Start</button>
+        </div>
+        <details class="preview">
+          <summary>${rt.blocks.map((b) => `<span class="tag">${esc(blockName(b))}</span>`).join('')}</summary>
+          ${rt.blocks.map((b, i) => `
+            <div class="block-preview">
+              <p><b>${i + 1}. ${esc(blockTitle(b))}</b>${b.note ? ` <span class="muted small">${esc(b.note)}</span>` : ''}</p>
+              ${itemList(b)}
+            </div>`).join('')}
+        </details>
+      </article>`;
+  }).join('');
+}
+
+function amountOf(it) {
+  if (it.reps != null) return `${it.reps}×`;
+  if (it.text) return `${it.text}×`;
+  if (it.secs != null) return `${it.secs}s`;
+  return '';
+}
+
+function itemList(block, current) {
+  return `<ul class="items">${block.items.map((it) => {
+    const ex = EXERCISES[it.ex];
+    const amt = amountOf(it);
+    return `
+      <li class="${it === current ? 'current' : ''}">
+        <details>
+          <summary>${amt ? `<span class="amt">${esc(amt)}</span>` : ''}${esc(ex.name)}${it.note ? ` <span class="muted">· ${esc(it.note)}</span>` : ''}</summary>
+          <p class="muted small">${esc(ex.cue)}</p>
+        </details>
+      </li>`;
+  }).join('')}</ul>`;
+}
+
+function renderRoutine() {
+  const a = state.activeRoutine;
+  const rt = routineById[a.id];
+  const block = rt.blocks[a.block];
+  const isLast = a.block === rt.blocks.length - 1;
+  const pills = rt.blocks.map((b, i) => `
+    <button class="pill ${i === a.block ? 'active' : ''} ${a.results[i].status === 'done' ? 'done' : ''}" data-action="rt-goto" data-i="${i}">
+      ${i + 1}. ${esc(blockName(b))}${a.results[i].status === 'done' ? ' <small>✓</small>' : ''}
+    </button>`).join('');
+  const phases = blockPhases(block);
+  return `
+    <header class="page-head row between">
+      <div>
+        <h1>${esc(a.name)}</h1>
+        <p class="muted"><span data-tick="rt-elapsed">${formatDuration(Date.now() - a.startedAt)}</span> elapsed</p>
+      </div>
+      <button class="btn ghost" data-action="rt-finish">Finish</button>
+    </header>
+    <div class="pills">${pills}</div>
+    ${phases ? renderTimer(a, block, phases) : renderCircuit(a, block)}
+    <div class="row between">
+      ${isLast ? '<button class="btn text" data-action="rt-finish">Finish workout</button>' : '<button class="btn text" data-action="rt-next">Skip to next block →</button>'}
+      <button class="btn text danger" data-action="rt-discard">Discard workout</button>
+    </div>`;
+}
+
+function blockHeader(a, block) {
+  return `
+    <p class="eyebrow">Block ${a.block + 1} of ${routineById[a.id].blocks.length}</p>
+    <h2>${esc(blockTitle(block))}</h2>
+    ${block.note ? `<p class="muted">${esc(block.note)}</p>` : ''}`;
+}
+
+function nextButton(a) {
+  const isLast = a.block === routineById[a.id].blocks.length - 1;
+  return `<button class="btn primary full" data-action="${isLast ? 'rt-finish' : 'rt-next'}">${isLast ? 'Finish workout' : 'Next block →'}</button>`;
+}
+
+function roundsCounter(a) {
+  const n = a.results[a.block].rounds;
+  return `
+    <div class="field">
+      <span>Rounds completed</span>
+      <div class="stepper">
+        <button data-action="rt-rounds" data-d="-1" aria-label="one round less">−</button>
+        <output>${n}</output>
+        <button data-action="rt-rounds" data-d="1" aria-label="one round more">+</button>
+      </div>
+    </div>`;
+}
+
+function renderTimer(a, block, phases) {
+  const elapsed = routineElapsed(a);
+  const total = phases.reduce((sum, p) => sum + p.secs, 0);
+  const rounds = block.kind === 'amrap' ? null : block.rounds;
+
+  if (elapsed == null) {
+    return `
+      <article class="card timer">
+        ${blockHeader(a, block)}
+        ${itemList(block)}
+        <div class="clock">${formatClock(total - phases[0].secs)}</div>
+        <button class="btn primary big full" data-action="rt-start">Start block</button>
+      </article>`;
+  }
+
+  const pos = phaseAt(phases, elapsed);
+  if (!pos.phase) {
+    return `
+      <article class="card timer">
+        ${blockHeader(a, block)}
+        <p class="done-banner">Block complete ✓</p>
+        ${block.kind === 'amrap' ? roundsCounter(a) : ''}
+        ${nextButton(a)}
+        <button class="btn text full" data-action="rt-restart">Do it again</button>
+      </article>`;
+  }
+
+  const p = pos.phase;
+  let label;
+  let sub = rounds ? `Round ${p.round} of ${rounds}` : '';
+  if (p.kind === 'ready') {
+    label = 'Get ready';
+    const first = block.items[0];
+    if (block.kind === 'interval') sub = `First: ${EXERCISES[first.ex].name}`;
+  } else if (p.kind === 'rest') {
+    label = 'Rest';
+    sub += ` · next: ${EXERCISES[p.next.ex].name}`;
+  } else if (block.kind === 'interval') {
+    label = EXERCISES[p.item.ex].name + (amountOf(p.item) && p.item.secs == null ? ` · ${amountOf(p.item)}` : '');
+  } else {
+    label = block.kind === 'amrap' ? 'Go!' : `Round ${p.round}`;
+  }
+  const paused = a.pausedAt != null;
+  return `
+    <article class="card timer phase-${p.kind}">
+      ${blockHeader(a, block)}
+      <div class="phase-label">${esc(label)}</div>
+      <div class="clock" data-tick="rt-clock">${formatClock(pos.remaining)}</div>
+      <div class="bar"><span data-tick="rt-bar" style="width:${(pos.into / p.secs) * 100}%"></span></div>
+      <p class="muted center">${esc(sub)}</p>
+      <div class="row gap center controls">
+        <button class="btn secondary" data-action="rt-restart" aria-label="Restart block">↺</button>
+        <button class="btn primary big grow" data-action="${paused ? 'rt-resume' : 'rt-pause'}">${paused ? 'Resume' : 'Pause'}</button>
+        <button class="btn secondary" data-action="rt-skip" aria-label="Skip this phase">Skip ›</button>
+      </div>
+      ${block.kind === 'amrap' ? roundsCounter(a) : ''}
+      ${itemList(block, p.item)}
+    </article>`;
+}
+
+function renderCircuit(a, block) {
+  const n = a.results[a.block].rounds;
+  const target = block.rounds;
+  const done = n >= target;
+  return `
+    <article class="card">
+      ${blockHeader(a, block)}
+      ${itemList(block)}
+      <div class="sets">${Array.from({ length: Math.max(target, n) }, (_, i) => `<span class="set ${i < n ? 'great' : 'empty'}">${i < n ? '✓' : i + 1}</span>`).join('')}</div>
+      <div class="row gap">
+        <button class="btn ${done ? 'secondary' : 'primary'} grow" data-action="rt-rounds" data-d="1">${target === 1 && !n ? 'Done ✓' : `Round ${n + 1} done ✓`}</button>
+        ${n ? '<button class="btn ghost" data-action="rt-rounds" data-d="-1">Undo</button>' : ''}
+      </div>
+      ${done ? nextButton(a) : ''}
+    </article>`;
 }
 
 function renderWorkout() {
@@ -279,6 +491,8 @@ function renderHistory() {
   const items = state.sessions.map((sess, idx) => ({ sess, idx })).reverse().map(({ sess, idx }) => {
     const t = sessionTotals(sess);
     const open = ui.openSession === idx;
+    const isRoutine = sess.kind === 'routine';
+    const blocksDone = isRoutine ? sess.blocks.filter((b) => b.result !== 'skipped').length : 0;
     return `
       <article class="card session">
         <button class="row between plain" data-action="toggle" data-i="${idx}" aria-expanded="${open}">
@@ -287,12 +501,16 @@ function renderHistory() {
             <p class="muted small">${fmtDate(sess.startedAt)} · ${formatDuration(sess.endedAt - sess.startedAt)}</p>
           </div>
           <div class="right small">
-            <b>${t.sets}</b> sets<br>${t.reps ? `${t.reps} reps` : ''}${t.reps && t.seconds ? ' · ' : ''}${t.seconds ? `${t.seconds}s held` : ''}
+            ${isRoutine
+              ? `<b>${blocksDone}/${sess.blocks.length}</b> blocks`
+              : `<b>${t.sets}</b> sets<br>${t.reps ? `${t.reps} reps` : ''}${t.reps && t.seconds ? ' · ' : ''}${t.seconds ? `${t.seconds}s held` : ''}`}
           </div>
         </button>
         ${open ? `
           <ul class="detail">
-            ${sess.exercises.map((e) => `<li><span>${esc(e.name)}</span><span class="muted">${e.done.map((n) => n + unit(e.type)).join(' · ')}</span></li>`).join('')}
+            ${isRoutine
+              ? sess.blocks.map((b) => `<li><span>${esc(b.name ?? b.title)}${b.name ? ` <span class="muted small">${esc(b.title)}</span>` : ''}</span><span class="muted">${esc(b.result)}</span></li>`).join('')
+              : sess.exercises.map((e) => `<li><span>${esc(e.name)}</span><span class="muted">${e.done.map((n) => n + unit(e.type)).join(' · ')}</span></li>`).join('')}
           </ul>
           <button class="btn text danger" data-action="delete-session" data-i="${idx}">Delete</button>` : ''}
       </article>`;
@@ -343,7 +561,11 @@ function renderOverlay() {
     return `
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sum-title">
         <h2 id="sum-title">${session ? 'Workout complete 💪' : 'Workout ended'}</h2>
-        ${session ? `<p class="muted">${formatDuration(session.endedAt - session.startedAt)} · ${t.sets} sets${t.reps ? ` · ${t.reps} reps` : ''}${t.seconds ? ` · ${t.seconds}s held` : ''}</p>` : '<p class="muted">No sets were logged, so nothing was saved.</p>'}
+        ${!session ? '<p class="muted">Nothing was logged, so nothing was saved.</p>'
+          : session.kind === 'routine'
+            ? `<p class="muted">${formatDuration(session.endedAt - session.startedAt)}</p>
+               <ul class="detail">${session.blocks.map((b) => `<li><span>${esc(b.name ?? b.title)}${b.name ? ` <span class="muted small">${esc(b.title)}</span>` : ''}</span><span class="muted">${esc(b.result)}</span></li>`).join('')}</ul>`
+            : `<p class="muted">${formatDuration(session.endedAt - session.startedAt)} · ${t.sets} sets${t.reps ? ` · ${t.reps} reps` : ''}${t.seconds ? ` · ${t.seconds}s held` : ''}</p>`}
         ${suggestions.map((s) => `
           <div class="suggest ${s.kind}">
             <p>${s.kind === 'advance' ? `<b>Level up!</b> You maxed out ${esc(s.from)}. Move on to <b>${esc(s.to)}</b>?` : `${esc(s.from)} was tough today. Step back to <b>${esc(s.to)}</b> for a while?`}</p>
@@ -369,8 +591,47 @@ function renderOverlay() {
 
 // ---------- timers ----------
 
+function tickRoutine(now) {
+  const a = state.activeRoutine;
+  const elEl = document.querySelector('[data-tick="rt-elapsed"]');
+  if (elEl) elEl.textContent = formatDuration(now - a.startedAt);
+  const block = routineById[a.id].blocks[a.block];
+  const phases = blockPhases(block);
+  const elapsed = routineElapsed(a, now);
+  if (!phases || elapsed == null) return;
+  const pos = phaseAt(phases, elapsed);
+  const key = `${a.block}:${pos.index}`;
+  if (ui.phaseKey !== key) {
+    // Stay quiet when a block is (re)opened; sound only on transitions while it runs.
+    const silent = ui.phaseKey == null;
+    ui.phaseKey = key;
+    ui.lastCount = null;
+    if (!pos.phase && a.results[a.block].status !== 'done') {
+      a.results[a.block].status = 'done';
+      save();
+    }
+    if (!silent) {
+      if (!pos.phase) play('done');
+      else if (pos.phase.kind !== 'ready') play(pos.phase.kind);
+    }
+    render();
+    return;
+  }
+  if (!pos.phase) return;
+  const secLeft = Math.ceil(pos.remaining);
+  if (secLeft <= 3 && secLeft !== ui.lastCount && a.pausedAt == null) {
+    ui.lastCount = secLeft;
+    play('count');
+  }
+  const clock = document.querySelector('[data-tick="rt-clock"]');
+  if (clock) clock.textContent = formatClock(pos.remaining);
+  const bar = document.querySelector('[data-tick="rt-bar"]');
+  if (bar) bar.style.width = `${(pos.into / pos.phase.secs) * 100}%`;
+}
+
 function tick() {
   const now = Date.now();
+  if (state.activeRoutine) tickRoutine(now);
   if (state.active) {
     const el = document.querySelector('[data-tick="elapsed"]');
     if (el) el.textContent = formatDuration(now - state.active.startedAt);
@@ -397,7 +658,78 @@ setInterval(tick, 250);
 
 // ---------- actions ----------
 
+function resetBlockTimer(a) {
+  a.blockStartedAt = null;
+  a.pausedAt = null;
+  a.pausedMs = 0;
+  ui.phaseKey = null;
+}
+
 const actions = {
+  'rt-begin': (d) => {
+    unlockAudio();
+    update(() => (state.activeRoutine = startRoutine(routineById[d.id])));
+    window.scrollTo(0, 0);
+  },
+  'rt-start': () => {
+    unlockAudio();
+    const a = state.activeRoutine;
+    resetBlockTimer(a);
+    a.blockStartedAt = Date.now();
+    if (a.results[a.block].status === 'todo') a.results[a.block].status = 'partial';
+    save();
+    render();
+  },
+  'rt-pause': () => update(() => (state.activeRoutine.pausedAt = Date.now())),
+  'rt-resume': () => {
+    unlockAudio();
+    update(() => {
+      const a = state.activeRoutine;
+      a.pausedMs += Date.now() - a.pausedAt;
+      a.pausedAt = null;
+    });
+  },
+  'rt-skip': () => {
+    const a = state.activeRoutine;
+    const pos = phaseAt(blockPhases(routineById[a.id].blocks[a.block]), routineElapsed(a));
+    a.pausedMs -= Math.ceil(pos.remaining * 1000);
+    save();
+    tick();
+  },
+  'rt-restart': () => update(() => resetBlockTimer(state.activeRoutine)),
+  'rt-goto': (d) => {
+    const a = state.activeRoutine;
+    if (Number(d.i) === a.block) return;
+    a.block = Number(d.i);
+    resetBlockTimer(a);
+    save();
+    render();
+  },
+  'rt-next': () => {
+    const a = state.activeRoutine;
+    actions['rt-goto']({ i: Math.min(a.block + 1, a.results.length - 1) });
+    window.scrollTo(0, 0);
+  },
+  'rt-rounds': (d) => update(() => {
+    const a = state.activeRoutine;
+    const res = a.results[a.block];
+    const block = routineById[a.id].blocks[a.block];
+    res.rounds = Math.max(0, res.rounds + Number(d.d));
+    if (block.kind === 'circuit') res.status = res.rounds >= block.rounds ? 'done' : res.rounds ? 'partial' : 'todo';
+  }),
+  'rt-finish': () => {
+    const a = state.activeRoutine;
+    if (a.results.some((r) => r.status !== 'done') && !confirm('Some blocks are not done yet. Finish anyway?')) return;
+    const result = finishRoutine(state, routineById[a.id]);
+    ui.phaseKey = null;
+    ui.summary = { session: result.session, suggestions: [] };
+    update(() => (state = result.state));
+  },
+  'rt-discard': () => {
+    if (!confirm('Discard this workout? Nothing will be saved.')) return;
+    ui.phaseKey = null;
+    update(() => (state.activeRoutine = null));
+  },
   tab: (d) => { ui.tab = d.tab; render(); window.scrollTo(0, 0); },
   start: (d) => update(() => {
     state.active = buildWorkout(d.id, state.levels);
@@ -497,6 +829,7 @@ const actions = {
     if (!confirm('Delete all workouts, levels and settings? This cannot be undone.')) return;
     ui.summary = null;
     ui.restEndsAt = null;
+    ui.phaseKey = null;
     update(() => (state = defaultState()));
   },
 };

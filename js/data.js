@@ -81,13 +81,25 @@ export const TRACKS = [
       { name: 'Wall Handstand Push-up', type: 'reps', sets: 3, min: 3, max: 10, cue: 'Chest-to-wall handstand, lower head to the floor and press.' },
     ],
   },
+  {
+    id: 'planche',
+    name: 'Planche',
+    steps: [
+      { name: 'Planche Lean', type: 'hold', sets: 3, min: 15, max: 30, cue: 'Push-up position, straight arms, lean shoulders past the hands.' },
+      { name: 'Frog Stand', type: 'hold', sets: 3, min: 10, max: 30, cue: 'Knees resting on the elbows, lean forward until the feet lift.' },
+      { name: 'Pseudo Planche Push-up', type: 'reps', sets: 3, min: 5, max: 12, cue: 'Hands by the hips, lean forward over the hands, push up.' },
+      { name: 'Tuck Planche', type: 'hold', sets: 3, min: 5, max: 15, cue: 'Straight arms, knees tucked to the chest, hips level with shoulders.' },
+      { name: 'Advanced Tuck Planche', type: 'hold', sets: 3, min: 5, max: 15, cue: 'Tuck with a flat back, hips opened to 90°.' },
+      { name: 'Straddle Planche', type: 'hold', sets: 3, min: 3, max: 10, cue: 'Legs straight and wide, body parallel to the floor.' },
+    ],
+  },
 ];
 
 export const TEMPLATES = [
   { id: 'full', name: 'Full Body', tracks: ['push', 'pull', 'legs', 'core'], blurb: 'Balanced session. Great 3×/week.' },
   { id: 'upper', name: 'Upper Body', tracks: ['pull', 'push', 'dip', 'handstand'], blurb: 'Pulling, pushing and overhead strength.' },
   { id: 'lower', name: 'Legs & Core', tracks: ['legs', 'core'], blurb: 'Short session for legs and trunk.' },
-  { id: 'skill', name: 'Skill Day', tracks: ['handstand', 'core'], blurb: 'Balance and body tension practice.' },
+  { id: 'skill', name: 'Skill Day', tracks: ['handstand', 'planche', 'core'], blurb: 'Balance, planche and body tension practice.' },
 ];
 
 export const trackById = Object.fromEntries(TRACKS.map((t) => [t.id, t]));

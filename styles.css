@@ -103,7 +103,7 @@ p { margin: 4px 0; }
 .btn.primary.danger { background: var(--bad); color: #fff; }
 .btn.big { font-size: 1.1rem; min-height: 56px; }
 .btn.full { width: 100%; margin-top: 12px; }
-button.plain { all: unset; cursor: pointer; width: 100%; display: flex; }
+button.plain { all: unset; cursor: pointer; width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* stat tiles */
@@ -164,6 +164,36 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 .stepper button:active { transform: scale(.94); }
 .stepper output { min-width: 96px; text-align: center; font-size: 2.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .stopwatch { display: grid; gap: 4px; margin-top: 8px; }
+
+/* my workouts */
+.card.up-next { border-color: var(--accent); }
+.preview { margin-top: 10px; }
+.preview > summary { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; cursor: pointer; }
+.preview > summary::-webkit-details-marker { display: none; }
+.preview > summary::after { content: "Show exercises ▾"; font-size: .8rem; color: var(--accent); font-weight: 600; align-self: center; margin-left: 4px; }
+.preview[open] > summary::after { content: "Hide ▴"; }
+.block-preview { margin-top: 12px; }
+.items { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 2px; }
+.items li { border-radius: 10px; }
+.items li.current { background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 700; }
+.items summary { padding: 6px 8px; cursor: pointer; list-style: none; }
+.items summary::-webkit-details-marker { display: none; }
+.items details p { padding: 0 8px 8px 8px; margin: 0; }
+.amt { display: inline-block; min-width: 44px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
+
+/* routine timer */
+.timer .clock { text-align: center; margin: 4px 0 8px; }
+.phase-label { text-align: center; font-size: 1.5rem; font-weight: 800; margin-top: 12px; }
+.phase-work { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+.phase-work .phase-label { color: var(--accent); }
+.phase-rest { border-color: var(--good); box-shadow: inset 0 0 0 2px var(--good); }
+.phase-rest .phase-label { color: var(--good); }
+.bar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--accent); transition: width .25s linear; }
+.phase-rest .bar span { background: var(--good); }
+.controls { margin: 12px 0; }
+.controls .btn.secondary { min-width: 64px; }
+.done-banner { text-align: center; font-size: 1.4rem; font-weight: 800; color: var(--good); margin: 16px 0; }
 
 /* skills */
 .progress { height: 6px; border-radius: 3px; background: var(--surface-2); margin: 10px 0; overflow: hidden; }

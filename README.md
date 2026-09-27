@@ -4,7 +4,8 @@ A small, offline-first bodyweight training app. It runs in the browser and can b
 
 ## Features
 
-- **Skill ladders** for Push, Pull, Legs, Core, Dip and Handstand. Each ladder goes from beginner to advanced (for example, Wall Push-up up to One-arm Push-up).
+- **My workouts**: 12 personal routines (Allenamento 1–12) made of timed blocks: intervals, Tabata, AMRAP, EMOM and circuits you do at your own pace. A guided timer runs each block with a get-ready countdown, work and rest phases, a 3-2-1 beep, and pause/skip. AMRAP rounds are counted, and the next routine in the sequence is marked "Up next".
+- **Skill ladders** for Push, Pull, Legs, Core, Dip, Handstand and Planche. Each ladder goes from beginner to advanced (for example, Wall Push-up up to One-arm Push-up).
 - **Workouts** (Full Body, Upper Body, Legs & Core, Skill Day) are built from your current step on each ladder.
 - **Set logging** with a rep stepper, or a stopwatch for hold exercises. Shows what you did last time.
 - **Rest timer** that starts after each set. It beeps and vibrates when rest is over, and you can add or remove 15s.
@@ -32,7 +33,8 @@ npm test           # node --test, covers the pure logic in js/logic.js
 | File | Purpose |
 | --- | --- |
 | `js/data.js` | Exercise ladders and workout templates. Edit this to add exercises. |
-| `js/logic.js` | Pure state logic (workout building, progression, stats) |
+| `js/routines.js` | Personal routines and the exercise glossary. Edit this to add or change your workouts. |
+| `js/logic.js` | Pure state logic (workout building, progression, block timers, stats) |
 | `js/app.js` | UI rendering, timers and event handling |
 | `styles.css` | Styles (light and dark mode) |
 | `sw.js`, `manifest.webmanifest` | PWA offline support and install metadata |
