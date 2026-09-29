@@ -160,3 +160,9 @@ test('clash rule: same group and same style clash; iso + dynamic and alternation
   assert.deepEqual(blockClashes({ kind: 'circuit', rounds: 1, items: [{ ex: 'dip' }, { ex: 'pull-up' }, { ex: 'push-up' }] }), []);
   assert.deepEqual(blockClashes({ kind: 'circuit', rounds: 3, items: [{ ex: 'dip' }, { ex: 'pull-up' }, { ex: 'push-up' }] }), [[2, 0]]);
 });
+
+test('the 12 trainings follow the rotation rules', () => {
+  for (const rt of ROUTINES) {
+    rt.blocks.forEach((b, i) => assert.deepEqual(blockClashes(b), [], `${rt.name} block ${i + 1}`));
+  }
+});

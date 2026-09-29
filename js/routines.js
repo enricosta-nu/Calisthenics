@@ -62,7 +62,7 @@ export const ROUTINES = [
       interval({ rounds: 4, work: 20, roundRest: 30 }, ['chin-up', 'push-up']),
       interval({ rounds: 4, work: 20, roundRest: 30 }, ['pull-up-iso', 'hollow-hold', 'pike-push-up']),
       holds('handstand', 4, 20),
-      amrap(12, [s('handstand', 20), r('australian', 10), s('plank', 30), 'dip', 'push-up']),
+      amrap(12, [s('handstand', 20), 'dip', r('australian', 10), 'push-up', s('plank', 30)]),
     ],
   },
   {
@@ -92,7 +92,7 @@ export const ROUTINES = [
       interval({ rounds: 4, work: 18, roundRest: 30 }, ['pull-up', 'push-up', 'pull-up-iso']),
       holds('handstand', 4, 30),
       holds('inverted-hang', 4, 30),
-      amrap(12, [r('squat-jump', 8), s('hollow-hold', 30), s('l-sit', 20), r('australian', 10), r('dip', 15)]),
+      amrap(12, [r('squat-jump', 8), s('hollow-hold', 30), r('australian', 10), s('l-sit', 20), r('dip', 15)]),
     ],
   },
   {
@@ -103,7 +103,7 @@ export const ROUTINES = [
       interval({ rounds: 4, work: 25, roundRest: 30 }, [s('hspu', 25), s('hollow-hold', 30)]),
       interval({ rounds: 4, work: 25, roundRest: 30 }, ['pull-up-iso', 'pike-push-up']),
       interval({ rounds: 3, work: 15, roundRest: 30, title: 'Circuit' }, [
-        { ex: 'tuck-to-l-sit', note: 'parallettes' }, 'pike-push-up', 'australian', 'dragon-flag',
+        { ex: 'tuck-to-l-sit', note: 'parallettes' }, 'pike-push-up', 'dragon-flag', 'australian',
       ]),
     ],
   },
@@ -125,7 +125,7 @@ export const ROUTINES = [
       circuit(1, [r('one-arm-hang-rotation', 5, 'each arm')]),
       amrap(10, [
         r('pseudo-planche-push-up', 5), s('planche-lean', 20, 'arms wide'), s('rest', 30),
-        r('pike-push-up', 2, 'slow tempo'), r('push-up', 2, 'slow tempo'),
+        r('push-up', 2, 'slow tempo'), r('pike-push-up', 2, 'slow tempo'),
       ]),
       emom(60, 5, [s('windshield-wiper', 20), r('sissy-squat', 5)], 'Rest the remainder of each minute.'),
       circuit(1, ['stretching']),
