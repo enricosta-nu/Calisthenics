@@ -139,9 +139,9 @@ const BUILDERS = {
     return interval({ rounds, work, rest, roundRest }, pickExercises(k, ['reps', 'hold'], ctx));
   },
   tabata(target, ctx) {
-    // 20s on / 10s off, cycling through the exercises: 12 min when there's room.
+    // 8 exercises × 20s on / 10s off is a 4-minute circuit; 3 circuits (12 min) when there's room.
     const minutes = clamp(Math.round(target / 60), 4, 12);
-    return tabata(pickExercises(4, ['reps', 'hold'], ctx), { minutes });
+    return tabata(pickExercises(8, ['reps', 'hold'], ctx), { minutes });
   },
   emom(target, ctx) {
     const rounds = clamp(Math.round(target / 60), 4, 20);

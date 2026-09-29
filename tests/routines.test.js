@@ -26,16 +26,20 @@ test('interval phases: rest between items, round rest between rounds, none at th
   assert.equal(blockDuration(block), 15 + 20 + 30 + 15 + 20);
 });
 
-test('default tabata is 12 min of 20/10, cycling through the exercises', () => {
+test('default tabata is 12 min of 20/10: 3 circuits of 8 intervals, cycling through the exercises', () => {
   const tab = routineById.a1.blocks[1];
   const work = blockPhases(tab).filter((p) => p.kind === 'work');
   assert.equal(work.length, 24);
   assert.deepEqual(work.slice(0, 5).map((p) => p.item.ex), ['chin-up', 'push-up', 'planche-lean', 'plank', 'chin-up']);
-  assert.equal(work[23].round, 6);
-  assert.equal(blockRounds(tab), 6);
+  assert.equal(work[7].round, 1);
+  assert.equal(work[8].round, 2);
+  assert.equal(work[23].round, 3);
+  assert.equal(blockRounds(tab), 3);
   assert.equal(blockDuration(tab), 12 * 60);
-  // 5 exercises don't divide 24 intervals evenly: the last circuit is partial
-  assert.equal(blockRounds(routineById.a12.blocks[3]), 5);
+  // with 5 exercises the list doesn't line up with circuits, but it's still 3 × 4 min
+  const five = blockPhases(routineById.a12.blocks[3]).filter((p) => p.kind === 'work');
+  assert.equal(five[8].item.ex, 'australian'); // circuit 2 picks up where the list left off
+  assert.equal(blockRounds(routineById.a12.blocks[3]), 3);
 });
 
 test('tabata with explicit rounds keeps them', () => {

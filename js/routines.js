@@ -4,7 +4,9 @@
 //   interval — `rounds` passes through `items`; each item is `work` seconds (or item.secs),
 //              followed by `rest` seconds, with `roundRest` after the last item of a round.
 //              With `minutes` instead of `rounds`, it cycles through `items` until time is up.
-//              A Tabata is an interval block: 20s on / 10s off for 12 minutes unless given rounds.
+//              `circuit` sets how many intervals count as one round (default: the list length).
+//              A Tabata is an interval block: 20s on / 10s off for 12 minutes, in circuits of
+//              8 intervals (4 min), unless given rounds. Short lists just repeat within a circuit.
 //   amrap    — as many rounds as possible of `items` in `minutes`.
 //   emom     — every `every` seconds for `rounds` rounds, do `items`, rest the remainder.
 //   circuit  — untimed: `rounds` of `items` at your own pace.
@@ -20,10 +22,10 @@ const r = (ex, reps, note) => ({ ex, reps, note });
 const s = (ex, secs, note) => ({ ex, secs, note });
 const t = (ex, text, note) => ({ ex, text, note });
 
-export const interval = ({ rounds, minutes, work, rest = 0, roundRest = rest, title, note }, items) =>
-  ({ kind: 'interval', title, note, ...(minutes ? { minutes } : { rounds }), work, rest, roundRest, items: items.map(item) });
+export const interval = ({ rounds, minutes, circuit, work, rest = 0, roundRest = rest, title, note }, items) =>
+  ({ kind: 'interval', title, note, ...(minutes ? { minutes, ...(circuit ? { circuit } : {}) } : { rounds }), work, rest, roundRest, items: items.map(item) });
 export const tabata = (items, { work = 20, rest = 10, rounds, minutes = rounds ? undefined : 12, note } = {}) =>
-  interval({ rounds, minutes, work, rest, roundRest: rest, title: 'Tabata', note }, items);
+  interval({ rounds, minutes, circuit: minutes ? 8 : undefined, work, rest, roundRest: rest, title: 'Tabata', note }, items);
 // n × secs of one exercise with rest between.
 const holds = (ex, rounds, secs, rest = 30, note) => interval({ rounds, work: secs, rest, note }, [ex]);
 export const amrap = (minutes, items, note) => ({ kind: 'amrap', minutes, note, items: items.map(item) });

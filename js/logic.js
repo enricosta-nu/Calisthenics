@@ -247,9 +247,10 @@ export function blockPhases(block) {
     // Cycle through the list until the clock runs out.
     const total = block.minutes * 60;
     const n = block.items.length;
+    const perRound = block.circuit ?? n;
     for (let i = 0, t = 0; t < total; i++) {
       const it = block.items[i % n];
-      const round = Math.floor(i / n) + 1;
+      const round = Math.floor(i / perRound) + 1;
       const work = Math.min(itemWork(block, it), total - t);
       phases.push({ kind: 'work', secs: work, round, item: it });
       t += work;
@@ -276,7 +277,7 @@ export function blockRounds(block) {
   if (block.kind === 'amrap') return null;
   if (block.kind === 'interval' && block.minutes) {
     const works = blockPhases(block).filter((p) => p.kind === 'work').length;
-    return Math.ceil(works / block.items.length);
+    return Math.ceil(works / (block.circuit ?? block.items.length));
   }
   return block.rounds;
 }

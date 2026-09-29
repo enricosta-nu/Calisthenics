@@ -8,7 +8,7 @@ A small, offline-first bodyweight training app. It runs in the browser and can b
 - **Create**: choose duration, number of blocks, kinds of blocks (Intervals, Tabata, EMOM, AMRAP, Circuit, Skill holds) and a focus (Balanced, Push, Pull, Legs, Core, Handstand). Every muscle group is always trained; the focus gets extra work. Save the ones you like. Your 12 trainings (Allenamento 1–12) are listed here too, with the next one in the sequence marked "Up next".
 - **Guided timer** for every block: get-ready countdown, work and rest phases, beeps and a 3-2-1 countdown, pause, skip and restart. It picks up where you left off after a reload.
 - **Adjustable timings**: before a block starts, change its rounds, work, rest or total time. Changes to saved workouts are remembered.
-- **Tabata** means 20s on / 10s off, cycling through the exercises for 12 minutes, unless a workout says otherwise.
+- **Tabata** means 20s on / 10s off: a circuit is 8 intervals (4 min), and a Tabata is 3 circuits (12 min), cycling through the exercises. Shorter lists repeat within a circuit. Workouts can set other timings.
 - **Skills**: sets-and-reps workouts built from ladders for Push, Pull, Legs, Core, Dip, Handstand and Planche, with automatic level-up suggestions.
 - **History and stats**: workouts per week, week streak, and what you did in each block.
 - **Your data stays on your device** (localStorage). You can export or import a JSON backup.

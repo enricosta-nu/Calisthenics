@@ -49,7 +49,10 @@ test('a focus gets more work than any other group, but every group still shows u
 
 test('tabata is 12 minutes when the workout has room, shorter when it does not', () => {
   const long = generateWorkout({ minutes: 60, plan: ['intervals', 'tabata', 'amrap'], seed: 1 });
-  assert.equal(long.blocks.find((b) => b.title === 'Tabata').minutes, 12);
+  const tab = long.blocks.find((b) => b.title === 'Tabata');
+  assert.equal(tab.minutes, 12);
+  assert.equal(tab.items.length, 8);
+  assert.equal(new Set(tab.items.map((it) => it.ex)).size, 8);
   const short = generateWorkout({ minutes: 30, plan: ['intervals', 'tabata', 'emom', 'amrap'], seed: 1 });
   assert.ok(short.blocks.find((b) => b.title === 'Tabata').minutes < 12);
 });
