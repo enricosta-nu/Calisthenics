@@ -150,7 +150,8 @@ test('isWorkout rejects unknown exercises and empty blocks', () => {
 test('clash rule: same group and same style clash; iso + dynamic and alternation are fine', () => {
   assert.equal(exercisesClash('pull-up-iso', 'pull-up'), false); // iso + dynamic, same muscles
   assert.equal(exercisesClash('pull-up', 'push-up'), false);
-  assert.equal(exercisesClash('push-up', 'dip'), true); // two dynamic pushes back to back
+  assert.equal(exercisesClash('push-up', 'dip'), true); // two dynamic chest pushes back to back
+  assert.equal(exercisesClash('pike-push-up', 'push-up'), false); // shoulders vs chest
   assert.equal(exercisesClash('plank', 'hollow-hold'), true); // two core holds
   assert.equal(exercisesClash('planche-lean', 'rest'), false);
   // pull, push, pull hold: the wrap puts the hold before the pull again, which is fine

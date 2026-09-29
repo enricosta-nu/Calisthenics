@@ -330,12 +330,13 @@ export function blockName(block) {
 // Two exercises next to each other clash when they work the same main muscle group in the
 // same way: both dynamic (reps) or both isometric (holds). An iso next to a dynamic move of
 // the same group is fine (pull-up hold → pull-up), and pushes and pulls can repeat in a
-// block as long as they alternate (push, pull, push). Rest and stretches never clash.
+// block as long as they alternate (push, pull, push). A shoulder push (pike push-up) next to
+// a chest push (push-up) is fine too. Rest and stretches never clash.
 export function exercisesClash(a, b) {
   const ea = EXERCISES[a];
   const eb = EXERCISES[b];
   if (!ea?.g.length || !eb?.g.length) return false;
-  return ea.g[0] === eb.g[0] && ea.t === eb.t;
+  return ea.g[0] === eb.g[0] && ea.t === eb.t && ea.area === eb.area;
 }
 
 // Neighbouring pairs in a block that clash, counting the wrap from the last exercise back to

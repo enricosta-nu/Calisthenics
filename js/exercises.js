@@ -2,6 +2,8 @@
 //   g:    muscle groups the exercise trains (push, pull, legs, core, handstand)
 //   t:    "reps" (dynamic), "hold" (isometric), "warmup", "stretch" or "rest"
 //   reps / secs: a typical amount per round, used when the generator prescribes it
+//   area: for pushes, which part works most. Vertical pushes in an inverted V (pike, handstand
+//         push-up) are "shoulders"; the rest load the chest more. Different areas don't clash.
 
 const x = (name, g, t, amount, cue) => ({ name, g, t, ...amount, cue });
 const reps = (n) => ({ reps: n });
@@ -25,7 +27,7 @@ export const EXERCISES = {
   'push-up': x('Push-up', ['push'], 'reps', reps(12), 'Rigid plank, chest to the floor, full lockout.'),
   'diamond-push-up': x('Diamond push-up', ['push'], 'reps', reps(10), 'Hands together under the chest, elbows tucked.'),
   'hindu-push-up': x('Hindu push-up', ['push'], 'reps', reps(8), 'From downward dog, swoop the chest low and forward into upward dog, then back.'),
-  'pike-push-up': x('Pike push-up', ['push', 'handstand'], 'reps', reps(8), 'Hips high, lower the head between the hands, press back up.'),
+  'pike-push-up': { ...x('Pike push-up', ['push', 'handstand'], 'reps', reps(8), 'Hips high in an inverted V, lower the head between the hands, press back up. Mostly shoulders.'), area: 'shoulders' },
   'pseudo-planche-push-up': x('Pseudo planche push-up', ['push'], 'reps', reps(6), 'Hands by the hips, lean forward over the hands, push up.'),
   'planche-lean': x('Planche lean', ['push'], 'hold', secs(20), 'Push-up position, straight arms, lean shoulders well past the hands.'),
   'dip': x('Dip', ['push'], 'reps', reps(10), 'Parallel bars, shoulders below elbows, press to lockout.'),
@@ -36,7 +38,7 @@ export const EXERCISES = {
   'handstand': x('Handstand', ['handstand'], 'hold', secs(30), 'Stack wrists, shoulders and hips. Wall or freestanding.'),
   'wall-handstand': x('Wall handstand', ['handstand'], 'hold', secs(30), 'Chest facing the wall, hands close to it, body in one line.'),
   'box-pike-handstand': x('Box pike handstand', ['handstand', 'push'], 'hold', secs(30), 'Feet on a box by the wall, hips stacked over shoulders.'),
-  'hspu': x('Handstand push-up', ['handstand', 'push'], 'reps', reps(3), 'Against the wall, lower head to the floor and press to lockout.'),
+  'hspu': { ...x('Handstand push-up', ['handstand', 'push'], 'reps', reps(3), 'Against the wall, lower head to the floor and press to lockout.'), area: 'shoulders' },
 
   // core
   'plank': x('Plank', ['core'], 'hold', secs(30), 'On the forearms, squeeze glutes, ribs down.'),
