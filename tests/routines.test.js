@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ROUTINES, EXERCISES, routineById } from '../js/routines.js';
 import {
-  READY_SECS, blockPhases, blockDuration, phaseAt, blockTitle, startRoutine, routineElapsed,
+  READY_SECS, blockRounds, timingFields, adjustTiming, applyOverrides, isWorkout, blockPhases, blockDuration, phaseAt, blockTitle, startRoutine, routineElapsed,
   finishRoutine, normalizeState, defaultState,
 } from '../js/logic.js';
 
@@ -26,11 +26,22 @@ test('interval phases: rest between items, round rest between rounds, none at th
   assert.equal(blockDuration(block), 15 + 20 + 30 + 15 + 20);
 });
 
-test('tabata 20/10 over 4 exercises × 2 rounds is 8 work intervals, 4 minutes minus the final rest', () => {
+test('default tabata is 12 min of 20/10, cycling through the exercises', () => {
   const tab = routineById.a1.blocks[1];
-  const phases = blockPhases(tab);
-  assert.equal(phases.filter((p) => p.kind === 'work').length, 8);
-  assert.equal(blockDuration(tab), 8 * 20 + 7 * 10);
+  const work = blockPhases(tab).filter((p) => p.kind === 'work');
+  assert.equal(work.length, 24);
+  assert.deepEqual(work.slice(0, 5).map((p) => p.item.ex), ['chin-up', 'push-up', 'planche-lean', 'plank', 'chin-up']);
+  assert.equal(work[23].round, 6);
+  assert.equal(blockRounds(tab), 6);
+  assert.equal(blockDuration(tab), 12 * 60);
+  // 5 exercises don't divide 24 intervals evenly: the last circuit is partial
+  assert.equal(blockRounds(routineById.a12.blocks[3]), 5);
+});
+
+test('tabata with explicit rounds keeps them', () => {
+  const tab = routineById.a8.blocks[0];
+  assert.equal(tab.minutes, undefined);
+  assert.equal(blockPhases(tab).filter((p) => p.kind === 'work').length, 16);
 });
 
 test('amrap, emom and circuit timelines', () => {
@@ -54,7 +65,8 @@ test('phaseAt walks the timeline', () => {
 
 test('block titles', () => {
   assert.equal(blockTitle(routineById.a1.blocks[0]), '4 × 30s / 45s');
-  assert.equal(blockTitle(routineById.a1.blocks[1]), 'Tabata · 2 × 20s / 10s');
+  assert.equal(blockTitle(routineById.a1.blocks[1]), 'Tabata · 12 min · 20s / 10s');
+  assert.equal(blockTitle(routineById.a8.blocks[1]), 'Tabata · 3 × 30s / 20s');
   assert.equal(blockTitle(routineById.a2.blocks[2]), 'AMRAP 12 min');
   assert.equal(blockTitle(routineById.a9.blocks[0]), 'Every 1:15 × 6');
   assert.equal(blockTitle(routineById.a10.blocks[0]), 'EMOM 8 min');
@@ -73,14 +85,14 @@ test('elapsed time excludes pauses', () => {
 test('finishRoutine saves a summary only when something was done', () => {
   const rt = routineById.a2;
   const state = { ...defaultState(), activeRoutine: startRoutine(rt, 0) };
-  const empty = finishRoutine(state, rt, 1000);
+  const empty = finishRoutine(state, 1000);
   assert.equal(empty.session, null);
   assert.equal(empty.state.sessions.length, 0);
   assert.equal(empty.state.activeRoutine, null);
 
   state.activeRoutine.results[0].status = 'done';
   state.activeRoutine.results[2] = { status: 'done', rounds: 4 };
-  const r = finishRoutine(state, rt, 60000);
+  const r = finishRoutine(state, 60000);
   assert.equal(r.state.sessions.length, 1);
   assert.deepEqual(r.session.blocks.map((b) => b.result), ['done', 'skipped', '4 rounds']);
   assert.equal(r.session.kind, 'routine');
@@ -89,7 +101,11 @@ test('finishRoutine saves a summary only when something was done', () => {
 test('normalizeState keeps a valid in-progress routine and drops a broken one', () => {
   const a = startRoutine(routineById.a3, 0);
   assert.deepEqual(normalizeState({ activeRoutine: a }).activeRoutine, a);
-  assert.equal(normalizeState({ activeRoutine: { ...a, id: 'gone' } }).activeRoutine, null);
+  // a generated workout carries its own blocks, so no id lookup is needed
+  assert.deepEqual(normalizeState({ activeRoutine: { ...a, id: 'gen' } }).activeRoutine.id, 'gen');
+  const broken = { ...a, id: 'gen', routine: { ...a.routine, blocks: [{ kind: 'amrap', minutes: 5, items: [{ ex: 'nope' }] }] } };
+  assert.equal(normalizeState({ activeRoutine: broken }).activeRoutine, null);
+  assert.equal(normalizeState({ activeRoutine: { ...a, id: 'gone', routine: undefined } }).activeRoutine, null);
   assert.equal(normalizeState({ activeRoutine: { ...a, results: [] } }).activeRoutine, null);
 });
 
@@ -99,4 +115,30 @@ test('reference: blocks sum into a sensible workout length', () => {
     assert.ok(mins > 10 && mins < 70, `${rt.name}: ${mins} min`);
   }
   assert.equal(READY_SECS, 10);
+});
+
+test('timing edits: fields per block kind, limits, and single-exercise rest', () => {
+  const holds = routineById.a1.blocks[2]; // 4 × 30s handstand, 30s rest
+  assert.deepEqual(timingFields(holds), ['rounds', 'work', 'rest']);
+  assert.deepEqual(adjustTiming(holds, 'rest', 1), { rest: 35, roundRest: 35 });
+  assert.deepEqual(adjustTiming(holds, 'rounds', -1), { rounds: 3 });
+  assert.deepEqual(timingFields(routineById.a1.blocks[1]), ['minutes', 'work', 'rest', 'roundRest']);
+  assert.deepEqual(timingFields(routineById.a2.blocks[2]), ['minutes']);
+  assert.deepEqual(adjustTiming({ kind: 'interval', items: [{}, {}], rest: 0 }, 'rest', -1), { rest: 0 });
+  assert.deepEqual(adjustTiming({ kind: 'emom', every: 60 }, 'every', 1), { every: 75 });
+});
+
+test('applyOverrides merges edits per block without touching the original', () => {
+  const rt = routineById.a1;
+  const edited = applyOverrides(rt, { 2: { rest: 45, roundRest: 45 } });
+  assert.equal(edited.blocks[2].rest, 45);
+  assert.equal(rt.blocks[2].rest, 30);
+  assert.equal(edited.blocks[0], edited.blocks[0]);
+  assert.equal(blockDuration(edited.blocks[2]), 4 * 30 + 3 * 45);
+});
+
+test('isWorkout rejects unknown exercises and empty blocks', () => {
+  assert.ok(ROUTINES.every(isWorkout));
+  assert.ok(!isWorkout({ id: 'x', name: 'x', blocks: [] }));
+  assert.ok(!isWorkout({ id: 'x', name: 'x', blocks: [{ kind: 'amrap', minutes: 5, items: [{ ex: 'moonwalk' }] }] }));
 });

@@ -1,6 +1,7 @@
 // Pure state logic: no DOM access, so it can be unit-tested with `node --test`.
 import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { routineById, EXERCISES } from './routines.js';
+import { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, BLOCK_COUNT, DEFAULT_BUILDER } from './options.js';
 
 export const STORAGE_KEY = 'calisthenics.v1';
 
@@ -11,7 +12,10 @@ export function defaultState() {
     sessions: [],
     active: null,
     activeRoutine: null,
-    settings: { rest: 90, sound: true },
+    custom: [], // workouts saved from Create
+    overrides: {}, // { routineId: { blockIndex: { work, rest, ... } } } timing edits
+    builder: { ...DEFAULT_BUILDER, kinds: [...DEFAULT_BUILDER.kinds] },
+    settings: { rest: 90, sound: true, suggestMinutes: 60 },
   };
 }
 
@@ -30,16 +34,42 @@ export function normalizeState(raw) {
     sessions: Array.isArray(raw.sessions) ? raw.sessions.filter(isSession) : [],
     active: raw.active && Array.isArray(raw.active.exercises) ? raw.active : null,
     activeRoutine: isActiveRoutine(raw.activeRoutine) ? raw.activeRoutine : null,
+    custom: Array.isArray(raw.custom) ? raw.custom.filter(isWorkout) : [],
+    overrides: raw.overrides && typeof raw.overrides === 'object' && !Array.isArray(raw.overrides) ? raw.overrides : {},
+    builder: normalizeBuilder(raw.builder),
     settings: {
       rest: Number.isFinite(raw.settings?.rest) ? clamp(raw.settings.rest, 15, 600) : base.settings.rest,
       sound: typeof raw.settings?.sound === 'boolean' ? raw.settings.sound : base.settings.sound,
+      suggestMinutes: SUGGEST_MINUTES.includes(raw.settings?.suggestMinutes) ? raw.settings.suggestMinutes : base.settings.suggestMinutes,
     },
   };
 }
 
+function normalizeBuilder(b) {
+  const d = DEFAULT_BUILDER;
+  if (!b || typeof b !== 'object') return { ...d, kinds: [...d.kinds] };
+  const kinds = Array.isArray(b.kinds) ? b.kinds.filter((k) => BLOCK_KINDS.some((x) => x.id === k)) : [];
+  return {
+    minutes: CREATE_MINUTES.includes(b.minutes) ? b.minutes : d.minutes,
+    blocks: Number.isInteger(b.blocks) ? clamp(b.blocks, BLOCK_COUNT.min, BLOCK_COUNT.max) : d.blocks,
+    kinds: kinds.length ? kinds : [...d.kinds],
+    focus: FOCUS.some((f) => f.id === b.focus) ? b.focus : d.focus,
+    warmup: typeof b.warmup === 'boolean' ? b.warmup : d.warmup,
+  };
+}
+
+const BLOCK_TYPES = ['interval', 'amrap', 'emom', 'circuit'];
+
+// A workout from storage or an import file is only used if every exercise exists.
+export function isWorkout(w) {
+  return Boolean(w && typeof w.id === 'string' && typeof w.name === 'string' && Array.isArray(w.blocks) && w.blocks.length
+    && w.blocks.every((b) => b && BLOCK_TYPES.includes(b.kind) && Array.isArray(b.items) && b.items.length
+      && b.items.every((it) => it && EXERCISES[it.ex])));
+}
+
 function isActiveRoutine(a) {
-  const routine = a && routineById[a.id];
-  return Boolean(routine && Array.isArray(a.results) && a.results.length === routine.blocks.length);
+  const routine = a && (a.routine ?? routineById[a.id]);
+  return Boolean(isWorkout(routine) && Array.isArray(a.results) && a.results.length === routine.blocks.length);
 }
 
 function isSession(s) {
@@ -213,6 +243,20 @@ export function blockPhases(block) {
     for (let round = 1; round <= block.rounds; round++) {
       phases.push({ kind: 'work', secs: block.every, round, items: block.items });
     }
+  } else if (block.minutes) {
+    // Cycle through the list until the clock runs out.
+    const total = block.minutes * 60;
+    const n = block.items.length;
+    for (let i = 0, t = 0; t < total; i++) {
+      const it = block.items[i % n];
+      const round = Math.floor(i / n) + 1;
+      const work = Math.min(itemWork(block, it), total - t);
+      phases.push({ kind: 'work', secs: work, round, item: it });
+      t += work;
+      const rest = Math.min(i % n === n - 1 ? block.roundRest : block.rest, total - t);
+      if (rest > 0) phases.push({ kind: 'rest', secs: rest, round, next: block.items[(i + 1) % n] });
+      t += rest;
+    }
   } else {
     for (let round = 1; round <= block.rounds; round++) {
       block.items.forEach((it, i) => {
@@ -225,6 +269,16 @@ export function blockPhases(block) {
     }
   }
   return phases;
+}
+
+// How many rounds the block has, for "Round x of y". Null for AMRAP.
+export function blockRounds(block) {
+  if (block.kind === 'amrap') return null;
+  if (block.kind === 'interval' && block.minutes) {
+    const works = blockPhases(block).filter((p) => p.kind === 'work').length;
+    return Math.ceil(works / block.items.length);
+  }
+  return block.rounds;
 }
 
 export function blockDuration(block) {
@@ -251,7 +305,11 @@ export function blockTitle(block) {
     case 'circuit': return block.rounds > 1 ? `${block.rounds} rounds` : 'At your pace';
     default: {
       const rest = block.rest ? ` / ${block.rest}s` : '';
-      return `${block.title ? `${block.title} · ` : ''}${block.rounds} × ${block.work}s${rest}`;
+      const prefix = block.title ? `${block.title} · ` : '';
+      if (block.minutes) return `${prefix}${block.minutes} min · ${block.work}s${rest}`;
+      // A single pass through a list reads better as "6 × 45s" than "1 × 45s".
+      const count = block.rounds === 1 ? block.items.length : block.rounds;
+      return `${prefix}${count} × ${block.work}s${rest}`;
     }
   }
 }
@@ -266,10 +324,46 @@ export function blockName(block) {
   return names.join(' + ');
 }
 
+// The workout being played. Older saved state only has the id of a built-in routine.
+export function routineOf(active) {
+  return active.routine ?? routineById[active.id];
+}
+
+// ---------- timing edits ----------
+
+const TIMING_LIMITS = {
+  rounds: [1, 20, 1], minutes: [1, 60, 1], work: [5, 300, 5], rest: [0, 300, 5], roundRest: [0, 600, 5], every: [15, 300, 15],
+};
+
+// The timing fields a block exposes for editing, in display order.
+export function timingFields(block) {
+  if (block.kind === 'amrap') return ['minutes'];
+  if (block.kind === 'emom') return ['every', 'rounds'];
+  if (block.kind === 'circuit') return ['rounds'];
+  const fields = [block.minutes ? 'minutes' : 'rounds', 'work', 'rest'];
+  // With one exercise the only rest is between rounds, which "rest" already covers.
+  if (block.items.length > 1) fields.push('roundRest');
+  return fields;
+}
+
+// Fields to merge into a block after a +/- tap on one timing value.
+export function adjustTiming(block, field, direction) {
+  const [lo, hi, step] = TIMING_LIMITS[field];
+  const value = clamp((block[field] ?? 0) + direction * step, lo, hi);
+  const patch = { [field]: value };
+  if (block.kind === 'interval' && block.items.length === 1 && field === 'rest') patch.roundRest = value;
+  return patch;
+}
+
+export function applyOverrides(routine, overrides = {}) {
+  return { ...routine, blocks: routine.blocks.map((b, i) => ({ ...b, ...(overrides[i] ?? {}) })) };
+}
+
 export function startRoutine(routine, now = Date.now()) {
   return {
     id: routine.id,
     name: routine.name,
+    routine: JSON.parse(JSON.stringify({ id: routine.id, name: routine.name, blocks: routine.blocks })),
     startedAt: now,
     block: 0,
     blockStartedAt: null,
@@ -292,9 +386,10 @@ export function resultText(block, res) {
   return { done: 'done', partial: 'partial', todo: 'skipped' }[res.status];
 }
 
-export function finishRoutine(state, routine, now = Date.now()) {
+export function finishRoutine(state, now = Date.now()) {
   const a = state.activeRoutine;
   if (!a) return { state, session: null };
+  const routine = routineOf(a);
   const touched = a.results.some((res) => res.status !== 'todo' || res.rounds > 0);
   const session = {
     kind: 'routine',

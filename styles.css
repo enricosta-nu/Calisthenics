@@ -165,6 +165,31 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 .stepper output { min-width: 96px; text-align: center; font-size: 2.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .stopwatch { display: grid; gap: 4px; margin-top: 8px; }
 
+/* suggest & create */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.chip {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 999px; padding: 10px 16px; min-height: 44px; font: inherit; font-weight: 600; cursor: pointer;
+}
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.chip:active { transform: scale(.97); }
+.builder h3 { margin-top: 12px; }
+.builder h3:first-child { margin-top: 0; }
+.builder .field h3 { margin: 0; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.workout-preview .block-preview { border-top: 1px solid var(--border); padding-top: 10px; }
+.sticky-actions {
+  position: sticky; bottom: calc(72px + env(safe-area-inset-bottom)); margin: 12px -16px -16px; padding: 12px 16px;
+  background: var(--surface); border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius);
+}
+.banner {
+  all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; margin-bottom: 16px; border-radius: 12px; background: var(--accent); color: var(--accent-text); font-weight: 600;
+}
+.timings { margin: 8px 0 12px; border: 1px solid var(--border); border-radius: 12px; padding: 4px 12px; }
+.timings > summary { cursor: pointer; padding: 8px 0; font-weight: 600; color: var(--accent); }
+.timings .field .stepper output { font-size: 1.2rem; min-width: 72px; }
+
 /* my workouts */
 .card.up-next { border-color: var(--accent); }
 .preview { margin-top: 10px; }
@@ -232,7 +257,7 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 /* nav */
 nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--border);

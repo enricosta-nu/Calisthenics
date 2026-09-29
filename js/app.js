@@ -1,16 +1,21 @@
 import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { ROUTINES, EXERCISES, routineById } from './routines.js';
+import { generateWorkout, suggestPlan, createPlan, workoutDuration, rng } from './generator.js';
+import { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, BLOCK_COUNT } from './options.js';
 import {
   STORAGE_KEY, defaultState, normalizeState, buildWorkout, finishWorkout, evaluate,
   sessionTotals, stats, trackHistory, lastPerformance, stepFor, formatDuration, formatClock, clamp,
   blockPhases, blockDuration, blockTitle, blockName, phaseAt, startRoutine, routineElapsed, finishRoutine,
+  routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
 } from './logic.js';
 
 // ---------- state ----------
 
 let state = load();
 const ui = {
-  tab: 'train',
+  tab: 'suggest',
+  returnTab: 'suggest', // where to go back to when a workout ends
+  seeds: { suggest: newSeed(), create: newSeed() }, // Shuffle picks a new seed
   pending: null, // value in the set stepper
   holdStartedAt: null, // stopwatch for hold exercises
   restEndsAt: null,
@@ -19,6 +24,10 @@ const ui = {
   phaseKey: null, // "block:phase" of the routine timer, to detect phase changes
   lastCount: null, // last 3-2-1 countdown second that beeped
 };
+
+function newSeed() {
+  return Math.floor(Math.random() * 2 ** 31);
+}
 
 function load() {
   try {
@@ -130,9 +139,17 @@ function defaultPending(ex) {
 // ---------- views ----------
 
 function render() {
-  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === ui.tab));
-  const view = { train: renderTrain, skills: renderSkills, history: renderHistory, settings: renderSettings }[ui.tab];
-  $('#view').innerHTML = view();
+  const training = state.active || state.activeRoutine;
+  if (ui.tab === 'train' && !training) ui.tab = ui.returnTab;
+  const navTab = ui.tab === 'train' ? ui.returnTab : ui.tab;
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === navTab));
+  const view = {
+    train: renderTrain, suggest: renderSuggest, create: renderCreate, skills: renderSkills, history: renderHistory, settings: renderSettings,
+  }[ui.tab];
+  const banner = training && ui.tab !== 'train'
+    ? '<button class="banner" data-action="tab" data-tab="train"><span>▶ Workout in progress</span><b>Resume</b></button>'
+    : '';
+  $('#view').innerHTML = banner + view();
   $('#overlay').innerHTML = renderOverlay();
   $('#overlay').hidden = !$('#overlay').innerHTML;
   tick();
@@ -140,13 +157,149 @@ function render() {
 }
 
 function renderTrain() {
-  if (state.activeRoutine) return renderRoutine();
-  return state.active ? renderWorkout() : renderPicker();
+  return state.activeRoutine ? renderRoutine() : renderWorkout();
 }
 
-function renderPicker() {
+function statTiles() {
   const s = stats(state.sessions);
-  const cards = TEMPLATES.map((t) => `
+  return `
+    <section class="tiles">
+      <div class="tile"><b>${s.thisWeek}</b><span>this week</span></div>
+      <div class="tile"><b>${s.weekStreak}</b><span>week streak</span></div>
+      <div class="tile"><b>${s.total}</b><span>workouts</span></div>
+    </section>`;
+}
+
+function chips(action, options, isOn, label) {
+  return `<div class="chips" role="group" aria-label="${esc(label)}">${options.map((o) => `
+    <button class="chip ${isOn(o.id) ? 'on' : ''}" aria-pressed="${isOn(o.id)}" data-action="${action}" data-id="${o.id}">${esc(o.name)}</button>`).join('')}</div>`;
+}
+
+const minutesOptions = (list) => list.map((m) => ({ id: m, name: `${m} min` }));
+
+function suggestedWorkout() {
+  const minutes = state.settings.suggestMinutes;
+  const seed = ui.seeds.suggest;
+  return generateWorkout({ minutes, plan: suggestPlan(minutes, rng(seed)), seed, name: `Suggested · ${minutes} min` });
+}
+
+function createdWorkout() {
+  const b = state.builder;
+  const seed = ui.seeds.create;
+  return generateWorkout({
+    minutes: b.minutes, plan: createPlan(b.kinds, b.blocks, rng(seed)), focus: b.focus, warmup: b.warmup, seed,
+  });
+}
+
+// Full block-by-block view of a workout, used for previews.
+function workoutBlocks(workout) {
+  return workout.blocks.map((b, i) => `
+    <div class="block-preview">
+      <p><b>${i + 1}. ${esc(blockName(b))}</b> <span class="muted small">${esc(blockTitle(b))}</span></p>
+      ${b.note ? `<p class="muted small">${esc(b.note)}</p>` : ''}
+      ${itemList(b)}
+    </div>`).join('');
+}
+
+function workoutPreview(workout, buttons) {
+  return `
+    <article class="card workout-preview">
+      <div class="row between">
+        <div>
+          <h3>${esc(workout.name)}</h3>
+          <p class="muted small">~${Math.round(workoutDuration(workout) / 60)} min · ${workout.blocks.length} blocks</p>
+        </div>
+      </div>
+      <div class="tags">${workout.blocks.map((b) => `<span class="tag">${esc(blockName(b))}</span>`).join('')}</div>
+      ${workoutBlocks(workout)}
+      <div class="row gap sticky-actions">${buttons}</div>
+    </article>`;
+}
+
+function renderSuggest() {
+  const workout = suggestedWorkout();
+  return `
+    <header class="page-head"><h1>Suggested workout</h1></header>
+    ${statTiles()}
+    <h2>How long do you have?</h2>
+    ${chips('sg-min', minutesOptions(SUGGEST_MINUTES), (m) => m === state.settings.suggestMinutes, 'Duration')}
+    <p class="muted small">A full-body session with warm-up and cool-down, mixing strength intervals, handstand work, a 12-minute Tabata and a finisher.</p>
+    ${workoutPreview(workout, `
+      <button class="btn secondary" data-action="shuffle" data-which="suggest">↻ Shuffle</button>
+      <button class="btn primary grow" data-action="gen-start" data-which="suggest">Start workout</button>`)}`;
+}
+
+function renderCreate() {
+  const b = state.builder;
+  const workout = createdWorkout();
+  return `
+    <header class="page-head"><h1>Create a workout</h1></header>
+    <article class="card builder">
+      <h3>Duration</h3>
+      ${chips('cr-min', minutesOptions(CREATE_MINUTES), (m) => m === b.minutes, 'Duration')}
+      <div class="field">
+        <h3>Blocks of work</h3>
+        <div class="stepper">
+          <button data-action="cr-blocks" data-d="-1" aria-label="one block less">−</button>
+          <output>${b.blocks}</output>
+          <button data-action="cr-blocks" data-d="1" aria-label="one block more">+</button>
+        </div>
+      </div>
+      <h3>Kinds of blocks</h3>
+      ${chips('cr-kind', BLOCK_KINDS, (k) => b.kinds.includes(k), 'Kinds of blocks')}
+      <p class="muted small">${esc(BLOCK_KINDS.filter((k) => b.kinds.includes(k.id)).map((k) => `${k.name}: ${k.blurb}`).join(' · '))}</p>
+      <h3>Focus</h3>
+      ${chips('cr-focus', FOCUS, (f) => f === b.focus, 'Focus')}
+      <p class="muted small">${b.focus === 'balanced' ? 'Every muscle group gets the same attention.' : `Every group is still trained; ${esc(FOCUS.find((f) => f.id === b.focus).blurb.toLowerCase())} get extra work.`}</p>
+      <label class="field toggle">
+        <span>Warm-up and cool-down</span>
+        <input type="checkbox" data-action="cr-warmup" ${b.warmup ? 'checked' : ''}>
+      </label>
+    </article>
+    ${workoutPreview(workout, `
+      <button class="btn secondary" data-action="shuffle" data-which="create">↻ Shuffle</button>
+      <button class="btn secondary" data-action="cr-save">Save</button>
+      <button class="btn primary grow" data-action="gen-start" data-which="create">Start</button>`)}
+    ${state.custom.length ? `<h2>Saved workouts</h2>${routineCards(state.custom, { deletable: true })}` : ''}
+    <h2>Your trainings</h2>
+    <p class="muted small">Tap a block's timings when you start it to change work, rest and rounds.</p>
+    ${routineCards(ROUTINES, { upNext: true })}`;
+}
+
+function routineCards(list, { upNext = false, deletable = false } = {}) {
+  const lastDone = {};
+  let lastId = null;
+  for (const sess of state.sessions) {
+    if (sess.kind !== 'routine') continue;
+    lastDone[sess.routine] = sess.startedAt;
+    lastId = sess.routine;
+  }
+  const lastIdx = list.findIndex((rt) => rt.id === lastId);
+  const next = upNext ? list[(lastIdx + 1) % list.length].id : null;
+  return list.map((base) => {
+    const rt = applyOverrides(base, state.overrides[base.id]);
+    const mins = Math.round(workoutDuration(rt) / 60);
+    return `
+      <article class="card ${rt.id === next ? 'up-next' : ''}">
+        <div class="row between">
+          <div>
+            ${rt.id === next ? '<p class="eyebrow">Up next</p>' : ''}
+            <h3>${esc(rt.name)}</h3>
+            <p class="muted small">~${mins} min · ${rt.blocks.length} blocks${lastDone[rt.id] ? ` · last ${fmtDate(lastDone[rt.id])}` : ''}</p>
+          </div>
+          <button class="btn primary" data-action="rt-begin" data-id="${esc(rt.id)}">Start</button>
+        </div>
+        <details class="preview">
+          <summary>${rt.blocks.map((b) => `<span class="tag">${esc(blockName(b))}</span>`).join('')}</summary>
+          ${workoutBlocks(rt)}
+          ${deletable ? `<button class="btn text danger" data-action="custom-delete" data-id="${esc(rt.id)}">Delete this workout</button>` : ''}
+        </details>
+      </article>`;
+  }).join('');
+}
+
+function ladderCards() {
+  return TEMPLATES.map((t) => `
     <article class="card">
       <div class="row between">
         <div>
@@ -162,52 +315,6 @@ function renderPicker() {
         }).join('')}
       </ul>
     </article>`).join('');
-  return `
-    <header class="page-head"><h1>Train</h1></header>
-    <section class="tiles">
-      <div class="tile"><b>${s.thisWeek}</b><span>this week</span></div>
-      <div class="tile"><b>${s.weekStreak}</b><span>week streak</span></div>
-      <div class="tile"><b>${s.total}</b><span>workouts</span></div>
-    </section>
-    <h2>My workouts</h2>
-    ${renderRoutineCards()}
-    <h2>Skill ladder workouts</h2>
-    ${cards}
-    <p class="muted small">Exercises come from your current step on each skill ladder. Hit the top of the range on every set and you'll be offered the next step.</p>`;
-}
-
-function renderRoutineCards() {
-  const lastDone = {};
-  let lastId = null;
-  for (const sess of state.sessions) {
-    if (sess.kind !== 'routine') continue;
-    lastDone[sess.routine] = sess.startedAt;
-    lastId = sess.routine;
-  }
-  const lastIdx = ROUTINES.findIndex((rt) => rt.id === lastId);
-  const upNext = ROUTINES[(lastIdx + 1) % ROUTINES.length].id;
-  return ROUTINES.map((rt) => {
-    const mins = Math.round(rt.blocks.reduce((a, b) => a + blockDuration(b), 0) / 60);
-    return `
-      <article class="card ${rt.id === upNext ? 'up-next' : ''}">
-        <div class="row between">
-          <div>
-            ${rt.id === upNext ? '<p class="eyebrow">Up next</p>' : ''}
-            <h3>${esc(rt.name)}</h3>
-            <p class="muted small">~${mins} min · ${rt.blocks.length} blocks${lastDone[rt.id] ? ` · last ${fmtDate(lastDone[rt.id])}` : ''}</p>
-          </div>
-          <button class="btn primary" data-action="rt-begin" data-id="${rt.id}">Start</button>
-        </div>
-        <details class="preview">
-          <summary>${rt.blocks.map((b) => `<span class="tag">${esc(blockName(b))}</span>`).join('')}</summary>
-          ${rt.blocks.map((b, i) => `
-            <div class="block-preview">
-              <p><b>${i + 1}. ${esc(blockTitle(b))}</b>${b.note ? ` <span class="muted small">${esc(b.note)}</span>` : ''}</p>
-              ${itemList(b)}
-            </div>`).join('')}
-        </details>
-      </article>`;
-  }).join('');
 }
 
 function amountOf(it) {
@@ -233,7 +340,7 @@ function itemList(block, current) {
 
 function renderRoutine() {
   const a = state.activeRoutine;
-  const rt = routineById[a.id];
+  const rt = routineOf(a);
   const block = rt.blocks[a.block];
   const isLast = a.block === rt.blocks.length - 1;
   const pills = rt.blocks.map((b, i) => `
@@ -259,13 +366,13 @@ function renderRoutine() {
 
 function blockHeader(a, block) {
   return `
-    <p class="eyebrow">Block ${a.block + 1} of ${routineById[a.id].blocks.length}</p>
+    <p class="eyebrow">Block ${a.block + 1} of ${routineOf(a).blocks.length}</p>
     <h2>${esc(blockTitle(block))}</h2>
     ${block.note ? `<p class="muted">${esc(block.note)}</p>` : ''}`;
 }
 
 function nextButton(a) {
-  const isLast = a.block === routineById[a.id].blocks.length - 1;
+  const isLast = a.block === routineOf(a).blocks.length - 1;
   return `<button class="btn primary full" data-action="${isLast ? 'rt-finish' : 'rt-next'}">${isLast ? 'Finish workout' : 'Next block →'}</button>`;
 }
 
@@ -282,10 +389,43 @@ function roundsCounter(a) {
     </div>`;
 }
 
+const TIMING_LABELS = {
+  rounds: 'Rounds', minutes: 'Total time', work: 'Work', every: 'Every', roundRest: 'Rest between rounds',
+};
+
+function timingValue(field, v) {
+  if (field === 'rounds') return String(v);
+  if (field === 'minutes') return `${v} min`;
+  if (field === 'every') return formatClock(v);
+  return `${v}s`;
+}
+
+// Steppers for a block's timings, shown before the block starts.
+function timingEditor(a, block) {
+  const fields = timingFields(block);
+  const edited = state.overrides[a.id]?.[a.block];
+  const label = (f) => (f === 'rest' ? (block.items.length > 1 ? 'Rest between exercises' : 'Rest') : TIMING_LABELS[f]);
+  return `
+    <details class="timings" ${ui.timingsOpen ? 'open' : ''}>
+      <summary data-action="timings-toggle">Adjust timings</summary>
+      ${fields.map((f) => `
+        <div class="field">
+          <span>${label(f)}</span>
+          <div class="stepper">
+            <button data-action="rt-time" data-field="${f}" data-d="-1" aria-label="less ${label(f)}">−</button>
+            <output>${timingValue(f, block[f] ?? 0)}</output>
+            <button data-action="rt-time" data-field="${f}" data-d="1" aria-label="more ${label(f)}">+</button>
+          </div>
+        </div>`).join('')}
+      ${a.id !== 'gen' ? `<p class="muted small">Changes are remembered for ${esc(a.name)}.</p>` : ''}
+      ${edited ? '<button class="btn text" data-action="rt-time-reset">Reset to original timings</button>' : ''}
+    </details>`;
+}
+
 function renderTimer(a, block, phases) {
   const elapsed = routineElapsed(a);
   const total = phases.reduce((sum, p) => sum + p.secs, 0);
-  const rounds = block.kind === 'amrap' ? null : block.rounds;
+  const rounds = blockRounds(block);
 
   if (elapsed == null) {
     return `
@@ -293,6 +433,7 @@ function renderTimer(a, block, phases) {
         ${blockHeader(a, block)}
         ${itemList(block)}
         <div class="clock">${formatClock(total - phases[0].secs)}</div>
+        ${timingEditor(a, block)}
         <button class="btn primary big full" data-action="rt-start">Start block</button>
       </article>`;
   }
@@ -350,6 +491,7 @@ function renderCircuit(a, block) {
     <article class="card">
       ${blockHeader(a, block)}
       ${itemList(block)}
+      ${n ? '' : timingEditor(a, block)}
       <div class="sets">${Array.from({ length: Math.max(target, n) }, (_, i) => `<span class="set ${i < n ? 'great' : 'empty'}">${i < n ? '✓' : i + 1}</span>`).join('')}</div>
       <div class="row gap">
         <button class="btn ${done ? 'secondary' : 'primary'} grow" data-action="rt-rounds" data-d="1">${target === 1 && !n ? 'Done ✓' : `Round ${n + 1} done ✓`}</button>
@@ -459,6 +601,10 @@ function renderSkills() {
   }).join('');
   return `
     <header class="page-head"><h1>Skills</h1></header>
+    <h2>Sets & reps workouts</h2>
+    <p class="muted small">Built from your current step on each ladder. Hit the top of the range on every set and you'll be offered the next step.</p>
+    ${ladderCards()}
+    <h2>Skill ladders</h2>
     <p class="muted small">Tap any step to set it as your current level.</p>
     ${blocks}`;
 }
@@ -595,7 +741,7 @@ function tickRoutine(now) {
   const a = state.activeRoutine;
   const elEl = document.querySelector('[data-tick="rt-elapsed"]');
   if (elEl) elEl.textContent = formatDuration(now - a.startedAt);
-  const block = routineById[a.id].blocks[a.block];
+  const block = routineOf(a).blocks[a.block];
   const phases = blockPhases(block);
   const elapsed = routineElapsed(a, now);
   if (!phases || elapsed == null) return;
@@ -658,6 +804,14 @@ setInterval(tick, 250);
 
 // ---------- actions ----------
 
+function beginRoutine(routine) {
+  unlockAudio();
+  ui.returnTab = ui.tab === 'train' ? ui.returnTab : ui.tab;
+  ui.tab = 'train';
+  update(() => (state.activeRoutine = startRoutine(routine)));
+  window.scrollTo(0, 0);
+}
+
 function resetBlockTimer(a) {
   a.blockStartedAt = null;
   a.pausedAt = null;
@@ -667,10 +821,56 @@ function resetBlockTimer(a) {
 
 const actions = {
   'rt-begin': (d) => {
-    unlockAudio();
-    update(() => (state.activeRoutine = startRoutine(routineById[d.id])));
-    window.scrollTo(0, 0);
+    const base = state.custom.find((w) => w.id === d.id) ?? routineById[d.id];
+    beginRoutine(applyOverrides(base, state.overrides[base.id]));
   },
+  'gen-start': (d) => beginRoutine(d.which === 'suggest' ? suggestedWorkout() : createdWorkout()),
+  shuffle: (d) => { ui.seeds[d.which] = newSeed(); render(); },
+  'sg-min': (d) => update(() => (state.settings.suggestMinutes = Number(d.id))),
+  'cr-min': (d) => update(() => (state.builder.minutes = Number(d.id))),
+  'cr-blocks': (d) => update(() => (state.builder.blocks = clamp(state.builder.blocks + Number(d.d), BLOCK_COUNT.min, BLOCK_COUNT.max))),
+  'cr-kind': (d) => {
+    const kinds = state.builder.kinds;
+    if (kinds.includes(d.id) && kinds.length === 1) return toast('Pick at least one kind of block.');
+    update(() => (state.builder.kinds = kinds.includes(d.id) ? kinds.filter((k) => k !== d.id) : [...kinds, d.id]));
+  },
+  'cr-focus': (d) => update(() => (state.builder.focus = d.id)),
+  'cr-warmup': (d, el) => update(() => (state.builder.warmup = el.checked)),
+  'cr-save': () => {
+    const workout = createdWorkout();
+    const name = prompt('Name this workout', workout.name)?.trim();
+    if (!name) return;
+    update(() => state.custom.unshift({ id: `c${Date.now()}`, name, blocks: workout.blocks }));
+    toast('Saved. It is under Saved workouts.');
+  },
+  'custom-delete': (d) => {
+    if (!confirm('Delete this saved workout?')) return;
+    update(() => {
+      state.custom = state.custom.filter((w) => w.id !== d.id);
+      delete state.overrides[d.id];
+    });
+  },
+  'timings-toggle': (d, el) => {
+    // Remember it so re-renders keep the editor open; let the browser toggle it.
+    ui.timingsOpen = !el.parentElement.open;
+    return true;
+  },
+  'rt-time': (d) => update(() => {
+    const a = state.activeRoutine;
+    const block = routineOf(a).blocks[a.block];
+    const patch = adjustTiming(block, d.field, Number(d.d));
+    Object.assign(block, patch);
+    if (a.id !== 'gen') {
+      state.overrides[a.id] ??= {};
+      state.overrides[a.id][a.block] = { ...state.overrides[a.id][a.block], ...patch };
+    }
+  }),
+  'rt-time-reset': () => update(() => {
+    const a = state.activeRoutine;
+    const base = state.custom.find((w) => w.id === a.id) ?? routineById[a.id];
+    delete state.overrides[a.id]?.[a.block];
+    routineOf(a).blocks[a.block] = JSON.parse(JSON.stringify(base.blocks[a.block]));
+  }),
   'rt-start': () => {
     unlockAudio();
     const a = state.activeRoutine;
@@ -691,7 +891,7 @@ const actions = {
   },
   'rt-skip': () => {
     const a = state.activeRoutine;
-    const pos = phaseAt(blockPhases(routineById[a.id].blocks[a.block]), routineElapsed(a));
+    const pos = phaseAt(blockPhases(routineOf(a).blocks[a.block]), routineElapsed(a));
     a.pausedMs -= Math.ceil(pos.remaining * 1000);
     save();
     tick();
@@ -713,14 +913,14 @@ const actions = {
   'rt-rounds': (d) => update(() => {
     const a = state.activeRoutine;
     const res = a.results[a.block];
-    const block = routineById[a.id].blocks[a.block];
+    const block = routineOf(a).blocks[a.block];
     res.rounds = Math.max(0, res.rounds + Number(d.d));
     if (block.kind === 'circuit') res.status = res.rounds >= block.rounds ? 'done' : res.rounds ? 'partial' : 'todo';
   }),
   'rt-finish': () => {
     const a = state.activeRoutine;
     if (a.results.some((r) => r.status !== 'done') && !confirm('Some blocks are not done yet. Finish anyway?')) return;
-    const result = finishRoutine(state, routineById[a.id]);
+    const result = finishRoutine(state);
     ui.phaseKey = null;
     ui.summary = { session: result.session, suggestions: [] };
     update(() => (state = result.state));
@@ -732,6 +932,8 @@ const actions = {
   },
   tab: (d) => { ui.tab = d.tab; render(); window.scrollTo(0, 0); },
   start: (d) => update(() => {
+    ui.returnTab = ui.tab;
+    ui.tab = 'train';
     state.active = buildWorkout(d.id, state.levels);
     ui.pending = null;
   }),

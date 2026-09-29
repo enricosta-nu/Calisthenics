@@ -15,7 +15,7 @@ export const EXERCISES = {
   'chin-up-iso': x('Chin-up hold', ['pull'], 'hold', secs(20), 'Palms facing you, hold the top position.'),
   'scapular-pull': x('Scapular pull', ['pull'], 'reps', reps(10), 'From a hang, pull shoulder blades down without bending arms.'),
   'dead-hang': x('Dead hang', ['pull'], 'hold', secs(30), 'Straight arms, relaxed but active shoulders.'),
-  'active-hang': x('Dynamic hang', ['pull'], 'hold', secs(30), 'Hang and keep moving: shoulder shrugs, small swings, shifting weight.'),
+  'one-arm-hang-rotation': x('One-arm hang rotation', ['pull', 'core'], 'reps', reps(4), 'Hang from the bar with one hand and rotate your body around the straight arm. Switch hands.'),
   'inverted-hang': x('Inverted hang', ['pull', 'core'], 'hold', secs(20), 'Hang upside down from the bar, body straight, controlled breathing.'),
   'skin-the-cat': x('Skin the cat', ['pull', 'core'], 'reps', reps(3), 'From a hang, bring legs through your arms and back, rotating around the shoulders. Use low bars to start.'),
   'australian': x('Australian row', ['pull'], 'reps', reps(10), 'Under a low bar, body straight, pull chest to the bar.'),
@@ -49,6 +49,7 @@ export const EXERCISES = {
   'v-up': x('V-up', ['core'], 'reps', reps(10), 'Lying flat, lift legs and chest together, touch the toes.'),
   'mountain-climber': x('Mountain climber', ['core', 'legs'], 'reps', reps(20), 'Plank position, drive the knees to the chest quickly. Count each leg.'),
   'dragon-flag': x('Dragon flag', ['core'], 'reps', reps(4), 'Lying on a bench, body straight from the shoulders, lower slowly.'),
+  'tuck-to-l-sit': x('Tuck to L-sit', ['core', 'push'], 'reps', reps(6), 'On parallettes, start tucked up pushing the bars down, then extend the legs straight out to an L-sit and back.'),
   'l-sit': x('L-sit', ['core'], 'hold', secs(15), 'Straight arms, legs straight and parallel to the floor.'),
   'side-leg-raise': x('Side leg raise', ['legs', 'core'], 'reps', reps(12), 'Lying on your side, raise the top leg with control.'),
 

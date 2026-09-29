@@ -3,7 +3,8 @@
 // Block kinds:
 //   interval — `rounds` passes through `items`; each item is `work` seconds (or item.secs),
 //              followed by `rest` seconds, with `roundRest` after the last item of a round.
-//              A Tabata is an interval block (default 20s on / 10s off).
+//              With `minutes` instead of `rounds`, it cycles through `items` until time is up.
+//              A Tabata is an interval block: 20s on / 10s off for 12 minutes unless given rounds.
 //   amrap    — as many rounds as possible of `items` in `minutes`.
 //   emom     — every `every` seconds for `rounds` rounds, do `items`, rest the remainder.
 //   circuit  — untimed: `rounds` of `items` at your own pace.
@@ -19,10 +20,10 @@ const r = (ex, reps, note) => ({ ex, reps, note });
 const s = (ex, secs, note) => ({ ex, secs, note });
 const t = (ex, text, note) => ({ ex, text, note });
 
-export const interval = ({ rounds, work, rest = 0, roundRest = rest, title, note }, items) =>
-  ({ kind: 'interval', title, note, rounds, work, rest, roundRest, items: items.map(item) });
-export const tabata = (items, { work = 20, rest = 10, rounds = 2, note } = {}) =>
-  interval({ rounds, work, rest, roundRest: rest, title: 'Tabata', note }, items);
+export const interval = ({ rounds, minutes, work, rest = 0, roundRest = rest, title, note }, items) =>
+  ({ kind: 'interval', title, note, ...(minutes ? { minutes } : { rounds }), work, rest, roundRest, items: items.map(item) });
+export const tabata = (items, { work = 20, rest = 10, rounds, minutes = rounds ? undefined : 12, note } = {}) =>
+  interval({ rounds, minutes, work, rest, roundRest: rest, title: 'Tabata', note }, items);
 // n × secs of one exercise with rest between.
 const holds = (ex, rounds, secs, rest = 30, note) => interval({ rounds, work: secs, rest, note }, [ex]);
 export const amrap = (minutes, items, note) => ({ kind: 'amrap', minutes, note, items: items.map(item) });
@@ -79,7 +80,7 @@ export const ROUTINES = [
       interval({ rounds: 4, work: 15, roundRest: 30 }, ['pull-up', 'push-up']),
       holds('chin-up-iso', 4, 20),
       holds('handstand', 4, 25),
-      tabata(['wall-sit', 'pike-push-up', 'planche-lean', 'active-hang', 'hanging-leg-raise', 'hollow-hold', 'inverted-hang', 'plank'], { rounds: 1 }),
+      tabata(['wall-sit', 'pike-push-up', 'planche-lean', 'scapular-pull', 'hanging-leg-raise', 'hollow-hold', 'inverted-hang', 'plank']),
     ],
   },
   {
@@ -100,7 +101,7 @@ export const ROUTINES = [
       interval({ rounds: 4, work: 25, roundRest: 30 }, [s('hspu', 25), s('hollow-hold', 30)]),
       interval({ rounds: 4, work: 25, roundRest: 30 }, ['pull-up-iso', 'pike-push-up']),
       interval({ rounds: 3, work: 15, roundRest: 30, title: 'Circuit' }, [
-        { ex: 'skin-the-cat', note: 'low bars' }, 'pike-push-up', 'australian', 'dragon-flag',
+        { ex: 'tuck-to-l-sit', note: 'parallettes' }, 'pike-push-up', 'australian', 'dragon-flag',
       ]),
     ],
   },
@@ -119,7 +120,7 @@ export const ROUTINES = [
       emom(75, 6, [r('pull-up', 5), r('push-up', 8)], 'Every 1:15 for ~8 min.'),
       holds('box-pike-handstand', 4, 30),
       holds('wall-handstand', 4, 30),
-      circuit(1, [r('skin-the-cat', 5)]),
+      circuit(1, [r('one-arm-hang-rotation', 5, 'each arm')]),
       amrap(10, [
         r('pseudo-planche-push-up', 5), s('planche-lean', 20, 'arms wide'), s('rest', 30),
         r('pike-push-up', 2, 'slow tempo'), r('push-up', 2, 'slow tempo'),

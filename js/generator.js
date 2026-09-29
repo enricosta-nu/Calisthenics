@@ -3,28 +3,11 @@
 import { EXERCISES } from './exercises.js';
 import { interval, tabata, amrap, emom, circuit } from './routines.js';
 import { blockDuration, clamp } from './logic.js';
+import { FOCUS } from './options.js';
 
-export const BLOCK_KINDS = [
-  { id: 'intervals', name: 'Intervals', blurb: 'Timed rounds, e.g. 30s on / 15s off' },
-  { id: 'tabata', name: 'Tabata', blurb: '20s on / 10s off' },
-  { id: 'emom', name: 'EMOM', blurb: 'Every minute on the minute' },
-  { id: 'amrap', name: 'AMRAP', blurb: 'As many rounds as possible' },
-  { id: 'circuit', name: 'Circuit', blurb: 'Rounds at your own pace' },
-  { id: 'holds', name: 'Skill holds', blurb: 'Handstand, L-sit, isometrics' },
-];
-
-export const FOCUS = [
-  { id: 'balanced', name: 'Balanced' },
-  { id: 'push', name: 'Push', blurb: 'Chest, shoulders, triceps' },
-  { id: 'pull', name: 'Pull', blurb: 'Back, biceps, grip' },
-  { id: 'legs', name: 'Legs', blurb: 'Quads, glutes, hamstrings' },
-  { id: 'core', name: 'Core', blurb: 'Abs and body tension' },
-  { id: 'handstand', name: 'Handstand', blurb: 'Balance and overhead strength' },
-];
+export { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES } from './options.js';
 
 export const MAIN_GROUPS = ['pull', 'push', 'legs', 'core'];
-export const SUGGEST_MINUTES = [45, 60, 90];
-export const CREATE_MINUTES = [30, 45, 60, 75, 90];
 // Time budgeted between blocks to set up and catch your breath.
 export const TRANSITION_SECS = 60;
 
@@ -32,6 +15,9 @@ export const TRANSITION_SECS = 60;
 const KIND_ORDER = ['emom', 'intervals', 'holds', 'tabata', 'circuit', 'amrap'];
 // Share of the main time each kind gets, relative to the others.
 const KIND_WEIGHT = { holds: 0.6 };
+// Kinds with a set length (seconds) when the workout has room for it.
+const FIXED_SECS = { tabata: 12 * 60 };
+const MIN_BLOCK_SECS = 180;
 
 export function rng(seed) {
   let a = seed >>> 0;
@@ -109,12 +95,15 @@ function slotGroups(k, ctx) {
 }
 
 function pickExercise(group, types, ctx, exclude) {
-  const candidates = (strict) => Object.entries(EXERCISES).filter(([id, e]) =>
-    types.includes(e.t) && !exclude.has(id) && (strict ? e.g.includes(group) : e.g.length));
-  let pool = candidates(true);
-  if (!pool.length) pool = candidates(false);
-  // Prefer exercises whose main group matches, and ones not used yet today.
-  const weights = pool.map(([id, e]) => (e.g[0] === group ? 2 : 1) / (1 + 3 * (ctx.used[id] ?? 0)));
+  // Prefer exercises whose main group is `group`, then ones that also train it, then anything.
+  const tiers = [(e) => e.g[0] === group, (e) => e.g.includes(group), (e) => e.g.length > 0];
+  let pool = [];
+  for (const fits of tiers) {
+    pool = Object.entries(EXERCISES).filter(([id, e]) => types.includes(e.t) && !exclude.has(id) && fits(e));
+    if (pool.length) break;
+  }
+  // Favour exercises not used yet today.
+  const weights = pool.map(([id]) => 1 / (1 + 3 * (ctx.used[id] ?? 0)));
   let r = ctx.rand() * weights.reduce((a, b) => a + b, 0);
   let i = 0;
   while (i < pool.length - 1 && (r -= weights[i]) > 0) i++;
@@ -150,11 +139,9 @@ const BUILDERS = {
     return interval({ rounds, work, rest, roundRest }, pickExercises(k, ['reps', 'hold'], ctx));
   },
   tabata(target, ctx) {
-    const k = 4;
-    // Long slots use the 40/20 variant rather than piling on rounds.
-    const [work, rest] = target > 4 * k * 30 + 60 ? [40, 20] : [20, 10];
-    const rounds = clamp(Math.round((target + rest) / (k * (work + rest))), 1, 4);
-    return tabata(pickExercises(k, ['reps', 'hold'], ctx), { work, rest, rounds });
+    // 20s on / 10s off, cycling through the exercises: 12 min when there's room.
+    const minutes = clamp(Math.round(target / 60), 4, 12);
+    return tabata(pickExercises(4, ['reps', 'hold'], ctx), { minutes });
   },
   emom(target, ctx) {
     const rounds = clamp(Math.round(target / 60), 4, 20);
@@ -208,12 +195,18 @@ export function generateWorkout({ minutes, plan, focus = 'balanced', warmup = tr
   const transitions = TRANSITION_SECS * (plan.length + (warmup ? 2 : 0) - 1);
   const main = Math.max(plan.length * 180, total - warm - cool - transitions);
   const weightOf = (k) => KIND_WEIGHT[k] ?? 1;
-  const totalWeight = plan.reduce((a, k) => a + weightOf(k), 0);
+  // Give fixed-length blocks their time first if what's left still fits the others.
+  const fixed = plan.reduce((a, k) => a + (FIXED_SECS[k] ?? 0), 0);
+  const flexible = plan.filter((k) => !FIXED_SECS[k]);
+  const useFixed = fixed > 0 && main - fixed >= flexible.length * MIN_BLOCK_SECS;
+  const shared = useFixed ? flexible : plan;
+  const sharedWeight = shared.reduce((a, k) => a + weightOf(k), 0);
+  const targetOf = (k) => (useFixed && FIXED_SECS[k]) || ((useFixed ? main - fixed : main) * weightOf(k)) / sharedWeight;
 
   const ctx = { rand, focus, used: {}, usage: { pull: 0, push: 0, core: 0.1, legs: 0.2, handstand: 0 } };
   const blocks = [];
   if (warmup) blocks.push(easyBlock('warmup', 'Warm-up', warm, rand, 'jumping-jacks'));
-  for (const kind of plan) blocks.push(BUILDERS[kind]((main * weightOf(kind)) / totalWeight, ctx));
+  for (const kind of plan) blocks.push(BUILDERS[kind](targetOf(kind), ctx));
   if (warmup) blocks.push(easyBlock('stretch', 'Cool-down', cool, rand));
 
   const focusName = FOCUS.find((f) => f.id === focus)?.name ?? 'Balanced';
