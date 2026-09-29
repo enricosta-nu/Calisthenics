@@ -71,3 +71,50 @@ test('warm-up can be turned off, and EMOM only uses rep exercises', () => {
   assert.equal(w.blocks.length, 2);
   for (const b of w.blocks) for (const it of b.items) assert.equal(EXERCISES[it.ex].t, 'reps');
 });
+
+const main = (it) => EXERCISES[it.ex].g[0];
+
+test('a block never repeats a muscle group back to back, and only repeats at all when it must', () => {
+  const plans = [
+    ['emom', 'intervals', 'holds', 'intervals', 'holds', 'tabata', 'amrap'],
+    ['emom', 'emom', 'circuit', 'amrap', 'tabata'],
+  ];
+  for (const focus of ['balanced', 'push', 'pull', 'legs', 'core', 'handstand']) {
+    for (const plan of plans) {
+      for (const seed of SEEDS) {
+        const w = generateWorkout({ minutes: 90, plan, focus, seed });
+        for (const b of w.blocks) {
+          if (!b.items[0] || !EXERCISES[b.items[0].ex].g.length) continue; // warm-up, cool-down
+          const groups = b.items.map(main);
+          const k = groups.length;
+          const where = `${focus}/${seed} ${b.kind} ${groups.join(',')}`;
+          for (let i = 0; i < k; i++) {
+            const next = groups[(i + 1) % k];
+            if (k > 1 && (i < k - 1 || k > 2)) assert.notEqual(groups[i], next, `${where}: back to back`);
+          }
+          const groupCount = focus === 'handstand' ? 5 : 4;
+          if (k <= groupCount) assert.equal(new Set(groups).size, k, `${where}: repeated a group`);
+        }
+      }
+    }
+  }
+});
+
+test('EMOM pairs two different groups', () => {
+  for (const seed of SEEDS) {
+    const w = generateWorkout({ minutes: 45, plan: ['emom', 'emom', 'emom'], seed, focus: 'core' });
+    for (const b of w.blocks.filter((x) => x.kind === 'emom')) {
+      const [a, c] = b.items.map(main);
+      assert.notEqual(a, c);
+      assert.ok(a === 'core' || c === 'core', 'focus is in every block');
+    }
+  }
+});
+
+test('a focused Tabata gives the focus the extra slots', () => {
+  for (const seed of SEEDS) {
+    const w = generateWorkout({ minutes: 60, plan: ['tabata'], focus: 'legs', seed });
+    const groups = w.blocks.find((b) => b.title === 'Tabata').items.map(main);
+    assert.equal(groups.filter((g) => g === 'legs').length, 3, groups.join(','));
+  }
+});

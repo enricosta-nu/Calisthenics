@@ -64,39 +64,67 @@ export function createPlan(kinds, count, rand) {
 
 // ---------- exercise selection ----------
 
-// Muscle groups for the k exercises of one block. Balanced spreads work over the
-// least-trained groups so far; a focus takes ~40% of the slots and the rest rotate.
+// Muscle groups for the k exercises of one block. Rules:
+//  - every group once before any group repeats (so an EMOM is e.g. pull + core, never core + core);
+//  - repeats only happen when k is larger than the number of groups (a Tabata), and the focus
+//    gets those extra slots first;
+//  - never the same group twice in a row, counting the wrap from the last exercise back to
+//    the first, and not starting on the group the previous block ended on.
 function slotGroups(k, ctx) {
   const { focus, usage, rand } = ctx;
-  const byUsage = (groups) => groups
-    .map((g) => [g, usage[g] + rand() * 0.01])
+  const groups = MAIN_GROUPS.includes(focus) || focus === 'balanced' ? MAIN_GROUPS : [focus, ...MAIN_GROUPS];
+  const hasFocus = focus !== 'balanced';
+  // Hand out slots: focus first, then the groups trained least so far today.
+  const order = groups
+    .map((g) => [g, (hasFocus && g === focus ? -1e6 : usage[g]) + rand() * 0.01])
     .sort((a, b) => a[1] - b[1])
     .map(([g]) => g);
-  const fill = (groups, n) => {
-    const out = [];
-    while (out.length < n) out.push(...byUsage(groups));
-    return out.slice(0, n);
-  };
-  let slots;
-  if (focus === 'balanced') {
-    slots = fill(MAIN_GROUPS, k);
-  } else {
-    const nFocus = Math.max(1, Math.round(k * 0.4));
-    const others = fill(MAIN_GROUPS.filter((g) => g !== focus), k - nFocus);
-    slots = [];
-    for (let i = 0; i < k; i++) {
-      // focus first, then alternate so focus exercises aren't back to back
-      const takeFocus = slots.filter((g) => g === focus).length < nFocus && (i % 2 === 0 || !others.length);
-      slots.push(takeFocus ? focus : others.shift());
-    }
-  }
+  const counts = Object.fromEntries(groups.map((g) => [g, 0]));
+  const firstPass = Math.min(k, groups.length);
+  for (let i = 0; i < firstPass; i++) counts[order[i]] += 1;
+  // Extra slots: half to the focus (if any), the rest round the other groups.
+  const extra = k - firstPass;
+  const focusExtra = hasFocus ? Math.ceil(extra / 2) : 0;
+  if (hasFocus) counts[focus] += focusExtra;
+  const others = order.filter((g) => !(hasFocus && g === focus));
+  for (let i = 0; i < extra - focusExtra; i++) counts[others[i % others.length]] += 1;
+
+  const slots = arrange(counts, k, ctx.lastGroup, rand) ?? arrange(counts, k, null, rand);
   for (const g of slots) usage[g] += 1;
   return slots;
 }
 
-function pickExercise(group, types, ctx, exclude) {
-  // Prefer exercises whose main group is `group`, then ones that also train it, then anything.
-  const tiers = [(e) => e.g[0] === group, (e) => e.g.includes(group), (e) => e.g.length > 0];
+// Order the slots so no group follows itself (cyclically). Greedy on the group with the most
+// slots left, random among ties; retried a few times since greedy can paint itself in a corner.
+function arrange(counts, k, before, rand) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const left = { ...counts };
+    const out = [];
+    for (let i = 0; i < k; i++) {
+      const prev = i === 0 ? before : out[i - 1];
+      const options = Object.keys(left).filter((g) => left[g] > 0 && g !== prev && !(i === k - 1 && k > 2 && g === out[0]));
+      if (!options.length) break;
+      const most = Math.max(...options.map((g) => left[g]));
+      const best = options.filter((g) => left[g] === most);
+      const g = best[Math.floor(rand() * best.length)];
+      out.push(g);
+      left[g] -= 1;
+    }
+    if (out.length === k) return out;
+  }
+  return null;
+}
+
+// `avoid` holds groups the neighbouring exercises train; exercises that also train one of
+// them (like hanging leg raises, abs + grip, next to pull-ups) are only used as a fallback.
+function pickExercise(group, types, ctx, exclude, avoid = new Set()) {
+  const clear = (e) => !e.g.some((g) => avoid.has(g));
+  const tiers = [
+    (e) => e.g[0] === group && clear(e),
+    (e) => e.g[0] === group,
+    (e) => e.g.includes(group),
+    (e) => e.g.length > 0,
+  ];
   let pool = [];
   for (const fits of tiers) {
     pool = Object.entries(EXERCISES).filter(([id, e]) => types.includes(e.t) && !exclude.has(id) && fits(e));
@@ -115,7 +143,23 @@ function pickExercise(group, types, ctx, exclude) {
 
 function pickExercises(k, types, ctx) {
   const exclude = new Set();
-  return slotGroups(k, ctx).map((g) => pickExercise(g, types, ctx, exclude));
+  const groups = slotGroups(k, ctx);
+  const ids = [];
+  groups.forEach((group, i) => {
+    const wraps = k > 2;
+    const prevId = i === 0 ? ctx.lastEx : ids[i - 1];
+    const nextGroup = i < k - 1 ? groups[i + 1] : wraps ? groups[0] : null;
+    const avoid = new Set([
+      ...(prevId ? EXERCISES[prevId].g : []),
+      ...(i === k - 1 && wraps ? EXERCISES[ids[0]].g : []),
+      ...(nextGroup ? [nextGroup] : []),
+    ]);
+    avoid.delete(group);
+    ids.push(pickExercise(group, types, ctx, exclude, avoid));
+  });
+  ctx.lastGroup = groups.at(-1);
+  ctx.lastEx = ids.at(-1);
+  return ids;
 }
 
 // A prescribed amount for self-paced blocks: reps for dynamic moves, seconds for holds.
@@ -163,10 +207,13 @@ const BUILDERS = {
     let group = focus;
     if (focus === 'balanced') {
       // Handstand work first (it's in almost every session), then the least-trained group.
-      group = usage.handstand === 0 ? 'handstand' : [...MAIN_GROUPS].sort((a, b) => usage[a] - usage[b])[0];
+      const fresh = MAIN_GROUPS.filter((g) => g !== ctx.lastGroup);
+      group = usage.handstand === 0 ? 'handstand' : fresh.sort((a, b) => usage[a] - usage[b])[0];
     }
     usage[group] = (usage[group] ?? 0) + 1;
     const id = pickExercise(group, ['hold'], ctx, new Set());
+    ctx.lastGroup = group;
+    ctx.lastEx = id;
     const work = EXERCISES[id].secs;
     const rest = pick(rand, [30, 45, 60]);
     const rounds = clamp(Math.round((target + rest) / (work + rest)), 3, 8);
