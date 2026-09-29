@@ -2,7 +2,7 @@
 // Pure and seeded, so the same options + seed always give the same workout.
 import { EXERCISES } from './exercises.js';
 import { interval, tabata, amrap, emom, circuit } from './routines.js';
-import { blockDuration, clamp } from './logic.js';
+import { blockDuration, clamp, exercisesClash } from './logic.js';
 import { FOCUS } from './options.js';
 
 export { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES } from './options.js';
@@ -64,7 +64,7 @@ export function createPlan(kinds, count, rand) {
 
 // ---------- exercise selection ----------
 
-// Muscle groups for the k exercises of one block. Rules:
+// Muscle groups for the k exercises of one block (see exercisesClash in logic.js). Rules:
 //  - every group once before any group repeats (so an EMOM is e.g. pull + core, never core + core);
 //  - repeats only happen when k is larger than the number of groups (a Tabata), and the focus
 //    gets those extra slots first;
@@ -155,7 +155,13 @@ function pickExercises(k, types, ctx) {
       ...(nextGroup ? [nextGroup] : []),
     ]);
     avoid.delete(group);
-    ids.push(pickExercise(group, types, ctx, exclude, avoid));
+    let id = pickExercise(group, types, ctx, exclude, avoid);
+    // Fallback tiers can hand back an exercise whose main group isn't `group`; don't let
+    // that land a clash with a neighbour.
+    for (let tries = 0; tries < 5 && ids.length && exercisesClash(ids.at(-1), id); tries++) {
+      id = pickExercise(group, types, ctx, exclude, avoid);
+    }
+    ids.push(id);
   });
   ctx.lastGroup = groups.at(-1);
   ctx.lastEx = ids.at(-1);
@@ -171,16 +177,34 @@ function dosed(id, scale = 1) {
 
 // ---------- block builders: each aims at a target length in seconds ----------
 
+// Pull, push, then the first group again as a hold: e.g. pull-up / push-up / pull-up hold.
+// Pushes and pulls alternate, and the hold may sit next to the dynamic move of its group.
+function pushPullSuperset(ctx) {
+  const { rand, focus, usage } = ctx;
+  let [a, b] = rand() < 0.5 ? ['pull', 'push'] : ['push', 'pull'];
+  if (focus === b || ctx.lastGroup === a) [a, b] = [b, a];
+  const exclude = new Set();
+  const first = pickExercise(a, ['reps'], ctx, exclude, new Set(['core', 'legs', 'handstand', b]));
+  const second = pickExercise(b, ['reps'], ctx, exclude, new Set(['core', 'legs', 'handstand', a]));
+  const third = pickExercise(a, ['hold'], ctx, exclude, new Set(['core', 'legs', 'handstand', b]));
+  usage[a] += 2;
+  usage[b] += 1;
+  ctx.lastGroup = a;
+  ctx.lastEx = third;
+  return [first, second, third];
+}
+
 const BUILDERS = {
   intervals(target, ctx) {
     const { rand } = ctx;
     const k = target >= 420 ? 3 : 2;
+    const superset = k === 3 && ['balanced', 'push', 'pull'].includes(ctx.focus) && rand() < 0.4;
     const work = pick(rand, [20, 25, 30, 30, 40]);
     const rest = pick(rand, [0, 10, 15]);
     const roundRest = pick(rand, [30, 45, 60]);
     const round = k * work + (k - 1) * rest + roundRest;
     const rounds = clamp(Math.round((target + roundRest) / round), 2, 8);
-    return interval({ rounds, work, rest, roundRest }, pickExercises(k, ['reps', 'hold'], ctx));
+    return interval({ rounds, work, rest, roundRest }, superset ? pushPullSuperset(ctx) : pickExercises(k, ['reps', 'hold'], ctx));
   },
   tabata(target, ctx) {
     // 8 exercises × 20s on / 10s off is a 4-minute circuit; 3 circuits (12 min) when there's room.

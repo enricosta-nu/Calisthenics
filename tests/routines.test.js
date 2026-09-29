@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ROUTINES, EXERCISES, routineById } from '../js/routines.js';
 import {
-  READY_SECS, blockRounds, timingFields, adjustTiming, applyOverrides, isWorkout, blockPhases, blockDuration, phaseAt, blockTitle, startRoutine, routineElapsed,
+  READY_SECS, exercisesClash, blockClashes, blockRounds, timingFields, adjustTiming, applyOverrides, isWorkout, blockPhases, blockDuration, phaseAt, blockTitle, startRoutine, routineElapsed,
   finishRoutine, normalizeState, defaultState,
 } from '../js/logic.js';
 
@@ -145,4 +145,17 @@ test('isWorkout rejects unknown exercises and empty blocks', () => {
   assert.ok(ROUTINES.every(isWorkout));
   assert.ok(!isWorkout({ id: 'x', name: 'x', blocks: [] }));
   assert.ok(!isWorkout({ id: 'x', name: 'x', blocks: [{ kind: 'amrap', minutes: 5, items: [{ ex: 'moonwalk' }] }] }));
+});
+
+test('clash rule: same group and same style clash; iso + dynamic and alternation are fine', () => {
+  assert.equal(exercisesClash('pull-up-iso', 'pull-up'), false); // iso + dynamic, same muscles
+  assert.equal(exercisesClash('pull-up', 'push-up'), false);
+  assert.equal(exercisesClash('push-up', 'dip'), true); // two dynamic pushes back to back
+  assert.equal(exercisesClash('plank', 'hollow-hold'), true); // two core holds
+  assert.equal(exercisesClash('planche-lean', 'rest'), false);
+  // pull, push, pull hold: the wrap puts the hold before the pull again, which is fine
+  assert.deepEqual(blockClashes(routineById.a6.blocks[0]), []);
+  // a single-pass circuit doesn't wrap
+  assert.deepEqual(blockClashes({ kind: 'circuit', rounds: 1, items: [{ ex: 'dip' }, { ex: 'pull-up' }, { ex: 'push-up' }] }), []);
+  assert.deepEqual(blockClashes({ kind: 'circuit', rounds: 3, items: [{ ex: 'dip' }, { ex: 'pull-up' }, { ex: 'push-up' }] }), [[2, 0]]);
 });

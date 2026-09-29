@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EXERCISES } from '../js/exercises.js';
 import { generateWorkout, suggestPlan, createPlan, workoutDuration, rng, MAIN_GROUPS } from '../js/generator.js';
-import { isWorkout } from '../js/logic.js';
+import { isWorkout, blockClashes } from '../js/logic.js';
 
 const SEEDS = [1, 2, 3, 42, 99, 1234, 777, 2026];
 
@@ -74,30 +74,44 @@ test('warm-up can be turned off, and EMOM only uses rep exercises', () => {
 
 const main = (it) => EXERCISES[it.ex].g[0];
 
-test('a block never repeats a muscle group back to back, and only repeats at all when it must', () => {
+test('generated blocks never put clashing exercises next to each other', () => {
   const plans = [
     ['emom', 'intervals', 'holds', 'intervals', 'holds', 'tabata', 'amrap'],
     ['emom', 'emom', 'circuit', 'amrap', 'tabata'],
+    ['intervals', 'intervals', 'intervals', 'intervals'],
   ];
   for (const focus of ['balanced', 'push', 'pull', 'legs', 'core', 'handstand']) {
     for (const plan of plans) {
       for (const seed of SEEDS) {
         const w = generateWorkout({ minutes: 90, plan, focus, seed });
         for (const b of w.blocks) {
-          if (!b.items[0] || !EXERCISES[b.items[0].ex].g.length) continue; // warm-up, cool-down
           const groups = b.items.map(main);
-          const k = groups.length;
-          const where = `${focus}/${seed} ${b.kind} ${groups.join(',')}`;
-          for (let i = 0; i < k; i++) {
-            const next = groups[(i + 1) % k];
-            if (k > 1 && (i < k - 1 || k > 2)) assert.notEqual(groups[i], next, `${where}: back to back`);
+          const where = `${focus}/${seed} ${b.kind} ${b.items.map((it) => it.ex).join(',')}`;
+          assert.deepEqual(blockClashes(b), [], where);
+          // Legs and core never come up twice in a block that has room for every group.
+          const room = focus === 'handstand' ? 5 : 4;
+          if (groups.length <= room) {
+            for (const g of ['legs', 'core']) assert.ok(groups.filter((x) => x === g).length <= 1, where);
           }
-          const groupCount = focus === 'handstand' ? 5 : 4;
-          if (k <= groupCount) assert.equal(new Set(groups).size, k, `${where}: repeated a group`);
         }
       }
     }
   }
+});
+
+test('push/pull supersets alternate and pair a dynamic move with a hold of the same group', () => {
+  let seen = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const w = generateWorkout({ minutes: 90, plan: ['intervals', 'intervals', 'intervals'], seed });
+    for (const b of w.blocks.filter((x) => x.kind === 'interval' && x.items.length === 3)) {
+      const groups = b.items.map(main);
+      if (groups[0] !== groups[2]) continue;
+      seen++;
+      assert.ok(['push', 'pull'].includes(groups[0]) && ['push', 'pull'].includes(groups[1]) && groups[0] !== groups[1], groups.join(','));
+      assert.deepEqual(b.items.map((it) => EXERCISES[it.ex].t), ['reps', 'reps', 'hold']);
+    }
+  }
+  assert.ok(seen > 0, 'the superset pattern shows up');
 });
 
 test('EMOM pairs two different groups', () => {

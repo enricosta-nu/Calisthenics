@@ -325,6 +325,33 @@ export function blockName(block) {
   return names.join(' + ');
 }
 
+// ---------- muscle-group rotation ----------
+
+// Two exercises next to each other clash when they work the same main muscle group in the
+// same way: both dynamic (reps) or both isometric (holds). An iso next to a dynamic move of
+// the same group is fine (pull-up hold → pull-up), and pushes and pulls can repeat in a
+// block as long as they alternate (push, pull, push). Rest and stretches never clash.
+export function exercisesClash(a, b) {
+  const ea = EXERCISES[a];
+  const eb = EXERCISES[b];
+  if (!ea?.g.length || !eb?.g.length) return false;
+  return ea.g[0] === eb.g[0] && ea.t === eb.t;
+}
+
+// Neighbouring pairs in a block that clash, counting the wrap from the last exercise back to
+// the first when the block goes round more than once. Returns [[i, j], ...] item indexes.
+export function blockClashes(block) {
+  const items = block.items;
+  const k = items.length;
+  const loops = block.kind !== 'circuit' || block.rounds > 1;
+  const out = [];
+  for (let i = 0; i < k; i++) {
+    const j = i + 1 < k ? i + 1 : loops && k > 2 ? 0 : null;
+    if (j != null && exercisesClash(items[i].ex, items[j].ex)) out.push([i, j]);
+  }
+  return out;
+}
+
 // The workout being played. Older saved state only has the id of a built-in routine.
 export function routineOf(active) {
   return active.routine ?? routineById[active.id];
