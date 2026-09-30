@@ -25,10 +25,13 @@ chin-up hold (Batch 1) already train the biceps hard.
 
 ## Easier with a resistance band
 
+Beginners only: for users who can't yet do the basic version. Phase it out with thinner bands and negatives (see the index).
+
 | # | Exercise | Band help |
 |---|---|---|
-| 1 | Dip, upright torso | ✅ band across the dip station, knees or feet on it |
-| 4 | L-sit dip | ✅ same band, while learning to hold the L |
+| 1 | Dip, upright torso | ✅ band across the dip station (to confirm with you); or use the bench dip |
+| 5 | Underhand Australian row | ✅ band from the bar under the upper back, like the overhand row |
+| 4 | L-sit dip | ❌ advanced: learn dips and the L-sit separately first |
 
 ## What differs between them
 

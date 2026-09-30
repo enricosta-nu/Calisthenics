@@ -26,12 +26,11 @@ These are the "shoulder pushes" we talked about: in the app they don't clash wit
 | 9 | **Wall walk** (camminata al muro) | dynamic | 2 | Front deltoid, triceps | Serratus anterior, abs, trapezius | Wall | ➕ new | G |
 | 10 | **Tuck planche** | iso | 3 | Front deltoid | Pectoralis major, triceps, serratus anterior, abs, wrist flexors | Floor or parallettes | ➕ new | F |
 
-## Easier with a resistance band
+## Easier versions (no bands)
 
-Bands aren't commonly used here: these moves are about balance and bodyweight over the hands, so
-the usual easier versions are the ones already in the table (pike before handstand push-up,
-frog stand before tuck planche). For the tuck planche, a band looped over a bar under the hips
-can take some weight while learning the position; mention it if your coach uses that.
+Bands aren't used here. The easier steps are the ones already in the table: pike push-up before
+the handstand push-up, chest-to-wall before freestanding handstand, frog stand before the tuck
+planche.
 
 ## What differs between them
 

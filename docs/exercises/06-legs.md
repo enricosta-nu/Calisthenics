@@ -30,19 +30,21 @@ calisthenics, so 10 exercises in total, 5 for the front of the legs and 5 for th
 **Left out** (still in the app, because some of your trainings use them): lunge, sissy squat,
 horse stance, calf raise. Also left out: hip thrust (needs a bench) and sliding leg curl.
 
-## Easier with a resistance band
+## Easier versions (no bands)
 
-| # | Exercise | Band help |
+Bands aren't used for legs. The easier steps are:
+
+| # | Exercise | Easier version |
 |---|---|---|
-| 5 | Pistol squat | ✅ hold a band anchored in front of you (e.g. to a post or the dip station) to help at the bottom |
-| 10 | Nordic hamstring curl | ✅ band anchored behind and above you, looped under the armpits; it helps most at the bottom, where the Nordic is hardest; move to thinner bands over time (source I) |
+| 5 | Pistol squat | Hold a post or door frame; or squat down to a box and stand up on one leg |
+| 10 | Nordic hamstring curl | Lowering only, as slowly as possible, catching yourself with the hands; then a shorter range (sources H, I) |
 
 ## What differs between them
 
 - **Two legs vs one leg:** the two-leg squat works the quadriceps more; single-leg squats work the gluteus medius and hamstrings more (source A). So rotating them trains the leg differently, not just harder.
 - **Front vs back:** squats are mostly quadriceps. Bridges, single-leg RDLs and Nordic curls balance them with glutes and hamstrings.
 - **Iso + dynamic:** the wall sit (quadriceps work hardest at a 90° knee angle, source B) and the glute bridge hold are the isometric partners.
-- **Nordic curl:** very hard, but adding it to training programmes roughly halved hamstring injuries across 8,459 athletes (source H). Start with a band or a few slow reps.
+- **Nordic curl:** very hard, but adding it to training programmes roughly halved hamstring injuries across 8,459 athletes (source H). Start with a few slow lowering-only reps.
 
 ## Sources
 

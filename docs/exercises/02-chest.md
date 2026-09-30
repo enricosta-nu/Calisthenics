@@ -26,12 +26,14 @@ deltoid**. The serratus anterior and the abs keep the shoulder blades and the bo
 
 ## Easier with a resistance band
 
+Beginners only: for users who can't yet do the basic version. Phase it out with thinner bands and negatives (see the index).
+
 | # | Exercise | Band help |
 |---|---|---|
-| 6 | Dip | ✅ band across the bars of the dip station, knees or feet on it |
-| 11 | Ring dip | ✅ same idea, band hung between the rings' straps |
+| 6 | Dip | ✅ band across the dip station, knees or feet on it (to confirm with you) |
+| 11 | Ring dip | ❌ level 3: learn bar dips first |
 
-The band helps most at the bottom of the dip, where it's stretched. Move to thinner bands over time.
+Push-ups don't need a band: the easier versions are incline and knee push-ups (row 1, source B).
 
 ## What differs between them
 

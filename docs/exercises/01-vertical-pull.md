@@ -1,8 +1,8 @@
-# Batch 1 · Back (dorsali) · vertical pull
+# Batch 1 · Back (dorsali)
 
-**Status: approved.**
+**Status: approved; row 8 (Australian row) added, to check.**
 
-Movement: pulling the body up to a bar overhead. Main muscle: **latissimus dorsi** (the big back
+Movements: pulling the body up to a bar overhead (vertical pull, rows 1–7) or pulling the chest to a low bar (horizontal pull, row 8). Main muscle: **latissimus dorsi** (the big back
 muscle), helped by the elbow flexors (biceps, brachialis, brachioradialis) and the muscles that
 move the shoulder blades (lower and middle trapezius, rhomboids).
 
@@ -20,29 +20,30 @@ for example "3: add … / 5: level should be 1". Add any variation that's missin
 | 5 | **Negative pull-up** (trazioni negative) | dynamic, lowering only (3–5 s down) | 2 | Latissimus dorsi, biceps | Rear deltoid, trapezius, forearms, abs | Bar (+ box to start at the top) | ➕ new | F, G |
 | 6 | **Archer pull-up** (trazioni arciere) | dynamic, one side at a time | 3 | Latissimus dorsi and biceps of the pulling arm | Trapezius & rhomboids; forearm / grip; obliques & abs to stay square | Bar | ➕ new | H |
 | 7 | **Dead hang** (appeso) | iso | 2 | Forearm / grip flexors | Latissimus dorsi (stretched), shoulder stabilisers, trapezius | Bar | ✅ | I |
+| 8 | **Australian row** (rematore australiano / trazioni basse, presa prona) | dynamic | 1 (low bar, see question) | Latissimus dorsi, middle trapezius, rhomboids, rear deltoid | Biceps, brachialis, forearm / grip, core | Low bar, parallettes or rings | ✅ | L |
 
-Every exercise here is at the bar, so none is below level 2 (your rule).
+Every exercise at the (high) bar is at least level 2 (your rule). The Australian row uses a low bar with the feet on the floor; its level depends on the open question below.
 
 ## Easier with a resistance band
 
-A band looped over the bar, under the feet or knees, takes part of your bodyweight:
+Beginners only: for users who can't yet do the basic version. Phase it out with thinner bands and negatives (see the index).
 
 | # | Exercise | Band help |
 |---|---|---|
-| 1 | Pull-up | ✅ band-assisted pull-up |
-| 2 | Chin-up | ✅ band-assisted chin-up |
-| 3 | Pull-up hold | ✅ hold the top with a band under the feet |
-| 6 | Archer pull-up | ✅ light band under the feet while learning the side-to-side shift |
+| 1 | Pull-up | ✅ band looped over the bar, feet or knees in it |
+| 2 | Chin-up | ✅ same as the pull-up |
+| 8 | Australian row | ✅ band from the bar under the upper back (or bend the knees / raise the bar first) |
+| 3–7 | Holds, scapular pull-ups, negatives, archer, dead hang | ❌ no band: these are already the easier steps, or too advanced for band help |
 
-**How to use it:** the band helps most at the bottom (where it's stretched) and least at the
-top, so it doesn't fully train the hardest part of the pull. Use it together with negatives,
-and move to thinner bands over time (sources J, K). See the note in the index for the evidence.
+The band helps most where it's stretched furthest: at the bottom of the pull, the dead hang,
+exactly where a beginner is weakest. It helps less and less near the top (sources J, K).
 
 ## What differs between them (so the app can rotate without boring the user)
 
 - **Pull-up vs chin-up:** the same movement with a different grip. Chin-ups (palms toward you) use more **biceps and chest**. Pull-ups (palms away) use more **lower trapezius** (source A). They're good swaps for each other.
 - **Holds vs reps:** the pull-up hold and the dead hang are isometric. By your rule, they can sit next to a dynamic pull (pull-up hold → pull-up is fine).
 - **Easier options for beginners:** scapular pull-ups teach the first centimetres of the pull-up (source A found pull-ups start with the lower trapezius pulling the shoulder blades down). Negatives build strength for the full pull-up, because you're stronger lowering than lifting (source G).
+- **Vertical vs horizontal pull:** pull-ups load the lats from overhead; the Australian row pulls towards the chest and brings in the middle back (trapezius, rhomboids) and rear deltoid more. Rotating them trains the back from both angles. The underhand version is in Arms (more biceps).
 - **Harder option:** the archer pull-up loads one arm at a time, a step towards the one-arm pull-up.
 
 ## Sources
@@ -62,6 +63,7 @@ technique, weaker as evidence).
 - **I · coaching.** Dead hang: grip / forearm flexors work hardest; lats stretched under load; also decompresses the spine. [Fitness Volt](https://fitnessvolt.com/dead-hangs/), [Calixpert](https://www.calixpert.com/exercises/dead-hang)
 
 - **J · reference.** NASM exercise library, *Band-assisted pull-up*: loop the band over the bar, feet or knees in it; 3–5 sets of 5–10, moving to lighter bands. [NASM](https://www.nasm.org/resource-center/exercise-library/band-assisted-pull-up)
+- **L · study.** Inverted row grip study: an overhand (pronated) grip gives more rear deltoid and less biceps than underhand. [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC5548150/), [ResearchGate](https://www.researchgate.net/publication/272092763_Effects_of_hand-grip_during_the_inverted_row_with_and_without_a_suspension_device_An_electromyographical_investigation)
 - **K · coaching.** Band assistance is strongest at the bottom of the pull and fades at the top. [Torokhtiy](https://torokhtiy.com/blogs/guides/assisted-pull-ups-with-resistance-bands)
 
 **Limits:** I could only read ExRx through search results (its site is blocked from this
@@ -69,6 +71,8 @@ environment), and I found no muscle-activity studies for archer pull-ups, scapul
 dead hangs, so those rows rely on coaching sources.
 
 ## Questions for you
+
+1. **Australian row level:** it's at a low bar, feet on the floor, and it's usually the first pull for beginners. Level 1, or level 2 because of the bar rule?
 
 1. **Levels 1 / 2 / 3** mean beginner / intermediate / advanced. Do they match your experience?
 2. **Missing variations?** Candidates I left for later: neutral-grip pull-up, wide-grip pull-up, L-sit pull-up, commando pull-up, typewriter pull-up, muscle-up.
