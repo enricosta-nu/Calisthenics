@@ -1,5 +1,7 @@
 # Batch 4 · Arms (braccia: tricipiti e bicipiti)
 
+**Status: approved; row 1 changed at your request.**
+
 Movements: straightening the elbow against bodyweight (**triceps**) and bending it (**biceps,
 brachialis, brachioradialis**). Most back and chest exercises already work the arms a lot
 (chin-ups for biceps, dips and push-ups for triceps), so this batch is the exercises where the
@@ -11,7 +13,7 @@ arms are the *main* muscle.
 
 | # | Exercise (IT) | Style | Level | Main muscles | Secondary muscles | Equipment | In app? | Sources |
 |---|---|---|---|---|---|---|---|---|
-| 1 | **Bench dip** (dip alla panca) | dynamic | 1 | Triceps | Front deltoid, pectoralis major | Bench or chair | ➕ new | A |
+| 1 | **Dip, upright torso** (dip alle parallele, busto dritto) · alternative: **bench dip** (dip alla panca) | dynamic | 2 (bench dip: 1) | Triceps | Pectoralis major, front deltoid | Dip station or parallettes (bench dip: bench or chair) | ✅ dip · ➕ bench dip | A, H |
 | 2 | **Diamond push-up** (piegamenti a diamante) | dynamic | 2 | Triceps, pectoralis major | Front deltoid, core | Floor | ✅ | B, C |
 | 3 | **Bodyweight triceps extension** (estensioni tricipiti a corpo libero) | dynamic | 2 | Triceps | Core | Bar, bench or box | ➕ new | D |
 | 4 | **L-sit dip** | dynamic | 3 | Triceps, pectoralis major | Hip flexors and abs (to hold the legs), front deltoid | Parallel bars | ✅ | A, E |
@@ -21,9 +23,17 @@ arms are the *main* muscle.
 Only 6: a 7th good *biceps* exercise without equipment is hard to find, and chin-ups and the
 chin-up hold (Batch 1) already train the biceps hard.
 
+## Easier with a resistance band
+
+| # | Exercise | Band help |
+|---|---|---|
+| 1 | Dip, upright torso | ✅ band across the dip station, knees or feet on it |
+| 4 | L-sit dip | ✅ same band, while learning to hold the L |
+
 ## What differs between them
 
-- **Triceps ladder:** bench dip → diamond push-up → bodyweight triceps extension → L-sit dip.
+- **Triceps ladder:** bench dip → diamond push-up → upright dip → bodyweight triceps extension → L-sit dip.
+- **Upright dip vs bench dip:** the dip station version loads the triceps (and five other muscles) more than the bench dip (source A), and keeping the torso upright makes the triceps the main mover (source H). The bench dip stays as the easier alternative when there's no dip station or parallettes.
 - **Diamond push-ups vs normal push-ups:** hands together shifts work onto the triceps (source B; also Batch 2 source A: narrow hands = more triceps and chest).
 - **Biceps without chin-ups:** an underhand row uses more biceps than an overhand row (source F). The bodyweight curl isolates the biceps most. Both get harder by lowering the bar.
 
@@ -37,9 +47,12 @@ chin-up hold (Batch 1) already train the biceps hard.
 - **F · study.** Inverted row grip studies: an underhand (supinated) grip gives higher biceps activity than overhand; overhand gives more rear deltoid. [ResearchGate](https://www.researchgate.net/publication/272092763_Effects_of_hand-grip_during_the_inverted_row_with_and_without_a_suspension_device_An_electromyographical_investigation), [PMC](https://pmc.ncbi.nlm.nih.gov/articles/PMC5548150/)
 - **G · coaching.** Bodyweight curl on a low bar or rings: biceps, brachialis and brachioradialis; start with a high bar and lower it to progress. [Berg Movement](https://www.bergmovement.com/calisthenics-blog/bodyweight-biceps-exercises)
 
+- **H · coaching.** Dip torso angle: an upright torso with elbows tucked makes the triceps the main mover; leaning forward shifts work to the chest. [StrongLifts](https://stronglifts.com/dips/), [PureGym](https://www.puregym.com/exercises/chest/dips/)
+
 **Limits:** the triceps extension, L-sit dip and bodyweight curl rows rely on coaching sources.
 
-## Questions for you
+## Question for you
 
-1. Is it fine to have **only 6** here, or do you want a 7th (for example a close-grip chin-up)?
-2. Does your coach use **bench dips**? Some coaches avoid them because of the shoulder angle (source A notes it needs more shoulder extension).
+The **underhand Australian row** (row 5) is at a low bar, where your feet stay on the floor.
+I left it at level 1, because it's the usual first pulling exercise for beginners. Should your
+"bar = at least level 2" rule apply to low-bar exercises too, or only to hanging ones?

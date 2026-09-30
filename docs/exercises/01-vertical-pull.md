@@ -16,10 +16,27 @@ for example "3: add … / 5: level should be 1". Add any variation that's missin
 | 1 | **Pull-up** (trazioni prone) | dynamic | 2 | Latissimus dorsi | Biceps, brachialis, brachioradialis; lower & middle trapezius, rhomboids; rear deltoid; infraspinatus, teres major | Bar | ✅ | A, B, C |
 | 2 | **Chin-up** (trazioni supine) | dynamic | 2 | Latissimus dorsi, biceps | Pectoralis major, brachialis; lower trapezius (less than pull-up) | Bar | ✅ | A, C |
 | 3 | **Pull-up hold** (trazioni iso) · also the chin-up hold | iso | 2 | Elbow flexors (biceps, brachialis, brachioradialis), latissimus dorsi | Forearm / grip; lower trapezius; core to keep the body still | Bar | ✅ | D |
-| 4 | **Scapular pull-up** (also the "hang dinamico") | dynamic, small range | 1 | Lower trapezius, latissimus dorsi | Rhomboids, serratus anterior, teres major; grip | Bar | ✅ | A, E |
-| 5 | **Negative pull-up** (trazioni negative) | dynamic, lowering only (3–5 s down) | 1 | Latissimus dorsi, biceps | Rear deltoid, trapezius, forearms, abs | Bar (+ box to start at the top) | ➕ new | F, G |
+| 4 | **Scapular pull-up** (also the "hang dinamico") | dynamic, small range | 2 | Lower trapezius, latissimus dorsi | Rhomboids, serratus anterior, teres major; grip | Bar | ✅ | A, E |
+| 5 | **Negative pull-up** (trazioni negative) | dynamic, lowering only (3–5 s down) | 2 | Latissimus dorsi, biceps | Rear deltoid, trapezius, forearms, abs | Bar (+ box to start at the top) | ➕ new | F, G |
 | 6 | **Archer pull-up** (trazioni arciere) | dynamic, one side at a time | 3 | Latissimus dorsi and biceps of the pulling arm | Trapezius & rhomboids; forearm / grip; obliques & abs to stay square | Bar | ➕ new | H |
-| 7 | **Dead hang** (appeso) | iso | 1 | Forearm / grip flexors | Latissimus dorsi (stretched), shoulder stabilisers, trapezius | Bar | ✅ | I |
+| 7 | **Dead hang** (appeso) | iso | 2 | Forearm / grip flexors | Latissimus dorsi (stretched), shoulder stabilisers, trapezius | Bar | ✅ | I |
+
+Every exercise here is at the bar, so none is below level 2 (your rule).
+
+## Easier with a resistance band
+
+A band looped over the bar, under the feet or knees, takes part of your bodyweight:
+
+| # | Exercise | Band help |
+|---|---|---|
+| 1 | Pull-up | ✅ band-assisted pull-up |
+| 2 | Chin-up | ✅ band-assisted chin-up |
+| 3 | Pull-up hold | ✅ hold the top with a band under the feet |
+| 6 | Archer pull-up | ✅ light band under the feet while learning the side-to-side shift |
+
+**How to use it:** the band helps most at the bottom (where it's stretched) and least at the
+top, so it doesn't fully train the hardest part of the pull. Use it together with negatives,
+and move to thinner bands over time (sources J, K). See the note in the index for the evidence.
 
 ## What differs between them (so the app can rotate without boring the user)
 
@@ -43,6 +60,9 @@ technique, weaker as evidence).
 - **G · study.** 5-week eccentric, isometric and plyometric pull-up training in climbers: maximum strength improved in all three groups. [PMC](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10813506/)
 - **H · coaching.** Archer pull-up as a step towards the one-arm pull-up: lats and biceps of the pulling arm, core and grip. [GORNATION](https://www.gornation.com/blogs/calisthenics-exercises/archer-pull-up), [50pullups](https://www.50pullups.com/archer-pull-ups)
 - **I · coaching.** Dead hang: grip / forearm flexors work hardest; lats stretched under load; also decompresses the spine. [Fitness Volt](https://fitnessvolt.com/dead-hangs/), [Calixpert](https://www.calixpert.com/exercises/dead-hang)
+
+- **J · reference.** NASM exercise library, *Band-assisted pull-up*: loop the band over the bar, feet or knees in it; 3–5 sets of 5–10, moving to lighter bands. [NASM](https://www.nasm.org/resource-center/exercise-library/band-assisted-pull-up)
+- **K · coaching.** Band assistance is strongest at the bottom of the pull and fades at the top. [Torokhtiy](https://torokhtiy.com/blogs/guides/assisted-pull-ups-with-resistance-bands)
 
 **Limits:** I could only read ExRx through search results (its site is blocked from this
 environment), and I found no muscle-activity studies for archer pull-ups, scapular pull-ups or

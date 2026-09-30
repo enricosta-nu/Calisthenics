@@ -1,5 +1,7 @@
 # Batch 3 · Shoulders (spalle)
 
+**Status: approved; rows 8–10 added at your request, to check.**
+
 Movement: pushing overhead, or holding the body on straight arms with the shoulders in front of
 or above the hands. Main muscle: **front deltoid**, helped by the **triceps**, the **upper
 chest**, and the **trapezius and serratus anterior**, which rotate and hold the shoulder blades.
@@ -20,11 +22,22 @@ These are the "shoulder pushes" we talked about: in the app they don't clash wit
 | 5 | **Freestanding handstand** (verticale libera) | iso, balance | 3 | Front deltoid, trapezius, serratus anterior, wrist flexors | Lats, pectoralis major, biceps, core | Floor | ✅ | C, D |
 | 6 | **Planche lean** | iso | 2 | Front deltoid, serratus anterior | Biceps, pectoralis major, wrist flexors, core | Floor or parallettes | ✅ | E |
 | 7 | **Pseudo planche push-up** | dynamic | 2–3 | Front deltoid, pectoralis major, triceps | Serratus anterior, biceps, wrist flexors | Floor or parallettes | ✅ | E |
+| 8 | **Frog stand / crow pose** (corvo) | iso, balance | 1 | Front deltoid, wrist flexors | Serratus anterior, triceps, abs | Floor or parallettes | ➕ new | F |
+| 9 | **Wall walk** (camminata al muro) | dynamic | 2 | Front deltoid, triceps | Serratus anterior, abs, trapezius | Wall | ➕ new | G |
+| 10 | **Tuck planche** | iso | 3 | Front deltoid | Pectoralis major, triceps, serratus anterior, abs, wrist flexors | Floor or parallettes | ➕ new | F |
+
+## Easier with a resistance band
+
+Bands aren't commonly used here: these moves are about balance and bodyweight over the hands, so
+the usual easier versions are the ones already in the table (pike before handstand push-up,
+frog stand before tuck planche). For the tuck planche, a band looped over a bar under the hips
+can take some weight while learning the position; mention it if your coach uses that.
 
 ## What differs between them
 
 - **Overhead pressing ladder:** pike push-up → elevated pike push-up → wall handstand push-up. Each step puts more bodyweight over the hands (source B).
 - **Holds vs presses:** handstands and planche leans are isometric; pike push-ups and HSPUs are dynamic. They can sit side by side (your rule 1).
+- **Planche ladder:** frog stand → planche lean → pseudo planche push-up → tuck planche (sources E, F).
 - **Two directions:** handstand work loads the shoulders overhead; planche lean and pseudo planche push-up load them in front, on straight arms. Good to alternate between sessions so the same shoulder angle isn't hit every time.
 
 ## Sources
@@ -35,11 +48,13 @@ These are the "shoulder pushes" we talked about: in the app they don't clash wit
 - **D · study.** *Changes in the muscle activity of gymnasts during a handstand* — measured shoulder and wrist muscles while balancing. [PubMed](https://pubmed.ncbi.nlm.nih.gov/28700510/)
 - **E · coaching.** Planche lean and pseudo planche push-up: the forward lean puts more load on the front deltoids than a normal push-up; serratus anterior protracts and controls the shoulder blades; forearms and wrists work hard. [MasterClass](https://www.masterclass.com/articles/planche-push-up-guide), [Rehab Hero](https://www.rehabhero.ca/exercise/pseudo-planche-push-up)
 
+- **F · coaching.** Frog stand and tuck planche: typical progression frog stand → tuck → advanced tuck → straddle → full planche; front deltoids are the main driver in the tuck planche, with chest, triceps, serratus anterior and core; wrist conditioning is the main prerequisite. [Calixpert, frog stand](https://www.calixpert.com/exercises/frog-stand), [Calisthenics Corner, tuck planche](https://www.calisthenics-corner.com/skills/tuck-planche/), [Antranik, crow pose](https://antranik.org/learning-and-mastering-the-crow-pose/)
+- **G · coaching.** Wall walk: from lying face down, walk the feet up the wall into a handstand; front deltoids, triceps, serratus anterior and abs; a step towards freestanding handstands and HSPU. [Calixpert](https://www.calixpert.com/exercises/wall-walks), [Julie Lohre](https://julielohre.com/handstand-wall-climbs-crossfit-wall-walks/)
+
 **Limits:** I found no muscle-activity study of pike push-ups, handstand push-ups or planche
 leans themselves. The handstand rows are backed by research; the others rely on NASM and coaching
 sources.
 
-## Questions for you
+## Question for you
 
-1. Should the **pseudo planche push-up** stay here as a shoulder push, or is it a chest push for you? It decides whether push-up → pseudo planche push-up is allowed next to each other.
-2. **Left out for now:** frog stand / crow pose (balance, wrists), tuck planche (level 3+), wall walk. Worth adding?
+Should the **pseudo planche push-up** stay here as a shoulder push, or is it a chest push for you? It decides whether push-up → pseudo planche push-up is allowed next to each other.
