@@ -1,4 +1,6 @@
-# Batch 1 · Vertical pull (pull-up family)
+# Batch 1 · Back (dorsali) · vertical pull
+
+**Status: approved.**
 
 Movement: pulling the body up to a bar overhead. Main muscle: **latissimus dorsi** (the big back
 muscle), helped by the elbow flexors (biceps, brachialis, brachioradialis) and the muscles that
