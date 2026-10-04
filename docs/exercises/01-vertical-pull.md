@@ -20,9 +20,9 @@ for example "3: add … / 5: level should be 1". Add any variation that's missin
 | 5 | **Negative pull-up** (trazioni negative) | dynamic, lowering only (3–5 s down) | 2 | Latissimus dorsi, biceps | Rear deltoid, trapezius, forearms, abs | Bar (+ box to start at the top) | ➕ new | F, G |
 | 6 | **Archer pull-up** (trazioni arciere) | dynamic, one side at a time | 3 | Latissimus dorsi and biceps of the pulling arm | Trapezius & rhomboids; forearm / grip; obliques & abs to stay square | Bar | ➕ new | H |
 | 7 | **Dead hang** (appeso) | iso | 2 | Forearm / grip flexors | Latissimus dorsi (stretched), shoulder stabilisers, trapezius | Bar | ✅ | I |
-| 8 | **Australian row** (rematore australiano / trazioni basse, presa prona) | dynamic | 1 (low bar, see question) | Latissimus dorsi, middle trapezius, rhomboids, rear deltoid | Biceps, brachialis, forearm / grip, core | Low bar, parallettes or rings | ✅ | L |
+| 8 | **Australian row** (rematore australiano / trazioni basse, presa prona) | dynamic | 1 | Latissimus dorsi, middle trapezius, rhomboids, rear deltoid | Biceps, brachialis, forearm / grip, core | Low bar, parallettes or rings | ✅ | L |
 
-Every exercise at the (high) bar is at least level 2 (your rule). The Australian row uses a low bar with the feet on the floor; its level depends on the open question below.
+Every exercise at the high bar is at least level 2 (your rule). Low-bar exercises with the feet on the floor, like the Australian row, can be level 1.
 
 ## Easier with a resistance band
 
@@ -72,7 +72,6 @@ dead hangs, so those rows rely on coaching sources.
 
 ## Questions for you
 
-1. **Australian row level:** it's at a low bar, feet on the floor, and it's usually the first pull for beginners. Level 1, or level 2 because of the bar rule?
 
 1. **Levels 1 / 2 / 3** mean beginner / intermediate / advanced. Do they match your experience?
 2. **Missing variations?** Candidates I left for later: neutral-grip pull-up, wide-grip pull-up, L-sit pull-up, commando pull-up, typewriter pull-up, muscle-up.

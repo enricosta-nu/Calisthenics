@@ -30,7 +30,7 @@ Beginners only: for users who can't yet do the basic version. Phase it out with 
 
 | # | Exercise | Band help |
 |---|---|---|
-| 6 | Dip | ✅ band across the dip station, knees or feet on it (to confirm with you) |
+| 6 | Dip | ✅ band across the dip station, knees or feet on it |
 | 11 | Ring dip | ❌ level 3: learn bar dips first |
 
 Push-ups don't need a band: the easier versions are incline and knee push-ups (row 1, source B).

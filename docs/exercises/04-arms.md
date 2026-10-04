@@ -29,7 +29,7 @@ Beginners only: for users who can't yet do the basic version. Phase it out with 
 
 | # | Exercise | Band help |
 |---|---|---|
-| 1 | Dip, upright torso | ✅ band across the dip station (to confirm with you); or use the bench dip |
+| 1 | Dip, upright torso | ✅ band across the dip station; or use the bench dip |
 | 5 | Underhand Australian row | ✅ band from the bar under the upper back, like the overhand row |
 | 4 | L-sit dip | ❌ advanced: learn dips and the L-sit separately first |
 
@@ -53,9 +53,3 @@ Beginners only: for users who can't yet do the basic version. Phase it out with 
 - **H · coaching.** Dip torso angle: an upright torso with elbows tucked makes the triceps the main mover; leaning forward shifts work to the chest. [StrongLifts](https://stronglifts.com/dips/), [PureGym](https://www.puregym.com/exercises/chest/dips/)
 
 **Limits:** the triceps extension, L-sit dip and bodyweight curl rows rely on coaching sources.
-
-## Question for you
-
-The **underhand Australian row** (row 5) is at a low bar, where your feet stay on the floor.
-I left it at level 1, because it's the usual first pulling exercise for beginners. Should your
-"bar = at least level 2" rule apply to low-bar exercises too, or only to hanging ones?

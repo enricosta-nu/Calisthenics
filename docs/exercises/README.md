@@ -9,7 +9,7 @@ exercises, rotate variations and match the user's level.
 
 | Batch | Muscle group | Exercises | Status |
 |---|---|---|---|
-| [1](01-vertical-pull.md) | Back (dorsali) | 8 | ✅ approved · row 8 (Australian row) added, to check |
+| [1](01-vertical-pull.md) | Back (dorsali) | 8 | ✅ approved · row 8 (Australian row) added, level 1 |
 | [2](02-chest.md) | Chest (pettorali) | 11 | ✅ approved · rows 8–11 added, to check |
 | [3](03-shoulders.md) | Shoulders (spalle) | 10 | ✅ approved · rows 8–10 added, to check |
 | [4](04-arms.md) | Arms (tricipiti e bicipiti) | 6 | ✅ approved · row 1 changed |
@@ -18,9 +18,9 @@ exercises, rotate variations and match the user's level.
 
 ## Rules agreed so far
 
-- **Exercises at the bar are at least level 2.**
+- **Exercises at the high bar are at least level 2.** Low-bar exercises with the feet on the floor (Australian rows) can be level 1.
 - **Bands only for beginners:** a band is passive help for users who can't yet do the basic
-  version. It's allowed on pull-ups, chin-ups, Australian rows and dips, and never on advanced
+  version. It's allowed on pull-ups, chin-ups, Australian rows and dips (confirmed), and never on advanced
   or skill exercises, which have their own easier steps instead.
 
 ## About resistance bands
