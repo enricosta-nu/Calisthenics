@@ -4,17 +4,17 @@ One table per main muscle group. For every exercise: main and secondary muscles,
 iso, level (1 beginner · 2 intermediate · 3 advanced), equipment, whether it's already in the
 app, whether a resistance band can help, and the sources behind it.
 
-Once a batch is approved, its details go into the app so Suggest and Create can pick the right
-exercises, rotate variations and match the user's level.
+All batches are approved and in the app (`js/exercises.js`, `REFERENCE`): Suggest and Create
+pick only from these exercises, filtered by the user's level and equipment.
 
 | Batch | Muscle group | Exercises | Status |
 |---|---|---|---|
-| [1](01-vertical-pull.md) | Back (dorsali) | 8 | ✅ approved · row 8 (Australian row) added, level 1 |
-| [2](02-chest.md) | Chest (pettorali) | 11 | ✅ approved · rows 8–11 added, to check |
-| [3](03-shoulders.md) | Shoulders (spalle) | 10 | ✅ approved · rows 8–10 added, to check |
-| [4](04-arms.md) | Arms (tricipiti e bicipiti) | 6 | ✅ approved · row 1 changed |
-| [5](05-core.md) | Core (addominali) | 13 | ✅ approved · rows 8–13 added, to check |
-| [6](06-legs.md) | Legs (gambe): 5 front + 5 back | 10 | to review |
+| [1](01-vertical-pull.md) | Back (dorsali) | 8 | ✅ approved |
+| [2](02-chest.md) | Chest (pettorali) | 11 | ✅ approved |
+| [3](03-shoulders.md) | Shoulders (spalle) | 10 | ✅ approved |
+| [4](04-arms.md) | Arms (tricipiti e bicipiti) | 6 | ✅ approved |
+| [5](05-core.md) | Core (addominali) | 13 | ✅ approved |
+| [6](06-legs.md) | Legs (gambe): 5 front + 5 back | 10 | ✅ approved |
 
 ## Rules agreed so far
 

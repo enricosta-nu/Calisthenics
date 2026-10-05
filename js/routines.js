@@ -125,7 +125,7 @@ export const ROUTINES = [
       circuit(1, [r('one-arm-hang-rotation', 5, 'each arm')]),
       amrap(10, [
         r('pseudo-planche-push-up', 5), s('planche-lean', 20, 'arms wide'), s('rest', 30),
-        r('push-up', 2, 'slow tempo'), r('pike-push-up', 2, 'slow tempo'),
+        r('pike-push-up', 2, 'slow tempo'), r('push-up', 2, 'slow tempo'),
       ]),
       emom(60, 5, [s('windshield-wiper', 20), r('sissy-squat', 5)], 'Rest the remainder of each minute.'),
       circuit(1, ['stretching']),

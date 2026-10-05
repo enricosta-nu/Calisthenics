@@ -3,11 +3,13 @@
 import { EXERCISES } from './exercises.js';
 import { interval, tabata, amrap, emom, circuit } from './routines.js';
 import { blockDuration, clamp, exercisesClash } from './logic.js';
-import { FOCUS } from './options.js';
+import { FOCUS, DEFAULT_PROFILE } from './options.js';
 
 export { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES } from './options.js';
 
 export const MAIN_GROUPS = ['pull', 'push', 'legs', 'core'];
+// Which slot group (see slotGroups) a focus muscle group lives in. Arms alternate push / pull.
+const FOCUS_SLOT = { back: 'pull', chest: 'push', shoulders: 'handstand', core: 'core', legs: 'legs' };
 // Time budgeted between blocks to set up and catch your breath.
 export const TRANSITION_SECS = 60;
 
@@ -70,10 +72,20 @@ export function createPlan(kinds, count, rand) {
 //    gets those extra slots first;
 //  - never the same group twice in a row, counting the wrap from the last exercise back to
 //    the first, and not starting on the group the previous block ended on.
+function slotFocus(ctx) {
+  if (ctx.focus === 'balanced') return null;
+  if (ctx.focus === 'arms') {
+    ctx.armsTurn = ctx.armsTurn === 'push' ? 'pull' : 'push';
+    return ctx.armsTurn;
+  }
+  return FOCUS_SLOT[ctx.focus];
+}
+
 function slotGroups(k, ctx) {
-  const { focus, usage, rand } = ctx;
-  const groups = MAIN_GROUPS.includes(focus) || focus === 'balanced' ? MAIN_GROUPS : [focus, ...MAIN_GROUPS];
-  const hasFocus = focus !== 'balanced';
+  const { usage, rand } = ctx;
+  const focus = slotFocus(ctx);
+  const groups = !focus || MAIN_GROUPS.includes(focus) ? MAIN_GROUPS : [focus, ...MAIN_GROUPS];
+  const hasFocus = focus != null;
   // Hand out slots: focus first, then the groups trained least so far today.
   const order = groups
     .map((g) => [g, (hasFocus && g === focus ? -1e6 : usage[g]) + rand() * 0.01])
@@ -117,21 +129,51 @@ function arrange(counts, k, before, rand) {
 
 // `avoid` holds groups the neighbouring exercises train; exercises that also train one of
 // them (like hanging leg raises, abs + grip, next to pull-ups) are only used as a fallback.
-function pickExercise(group, types, ctx, exclude, avoid = new Set()) {
+// Can this user do this exercise? It must be in the approved reference, the user needs one of
+// its equipment options, and it must be at or below their level. A beginner with a band can
+// also get the band-assisted version of a level-2 exercise that allows one (pull-up, dip…).
+export function usable(e, profile) {
+  if (!e.mg) return false;
+  const has = (k) => profile.equipment.includes(k);
+  if (e.needs.length && !e.needs.some(has)) return false;
+  return e.level <= profile.level || (bandHelps(e, profile) && e.level === profile.level + 1);
+}
+
+const bandHelps = (e, profile) => e.band && profile.level === 1 && profile.equipment.includes('band');
+
+// The level an exercise effectively has for this user (band-assisted counts as their level).
+const effectiveLevel = (e, profile) => (e.level > profile.level ? profile.level : e.level);
+
+// `neighbours` are the exercises this one will sit next to; a clash with them (see
+// exercisesClash) is only accepted when nothing else is left.
+function pickExercise(group, types, ctx, exclude, avoid = new Set(), neighbours = []) {
+  const { profile } = ctx;
   const clear = (e) => !e.g.some((g) => avoid.has(g));
+  const noClash = (id) => !neighbours.some((n) => exercisesClash(n, id));
   const tiers = [
     (e) => e.g[0] === group && clear(e),
     (e) => e.g[0] === group,
     (e) => e.g.includes(group),
     (e) => e.g.length > 0,
   ];
+  const candidates = (fits, strict) => Object.entries(EXERCISES).filter(([id, e]) =>
+    types.includes(e.t) && !exclude.has(id) && usable(e, profile) && fits(e) && (!strict || noClash(id)));
   let pool = [];
-  for (const fits of tiers) {
-    pool = Object.entries(EXERCISES).filter(([id, e]) => types.includes(e.t) && !exclude.has(id) && fits(e));
+  for (const strict of [true, false]) {
+    for (const fits of tiers) {
+      pool = candidates(fits, strict);
+      if (pool.length) break;
+    }
     if (pool.length) break;
   }
-  // Favour exercises not used yet today.
-  const weights = pool.map(([id]) => 1 / (1 + 3 * (ctx.used[id] ?? 0)));
+  // Favour exercises at the user's level, in the focus muscle group, and not used yet today.
+  const weights = pool.map(([id, e]) => {
+    const gap = profile.level - effectiveLevel(e, profile);
+    // Band-assisted moves are a stopgap: used when needed, but not preferred over unassisted ones.
+    const levelWeight = e.level > profile.level ? 1.5 : gap === 0 ? 3 : gap === 1 ? 1.5 : 0.6;
+    const focusWeight = ctx.focus !== 'balanced' && e.mg === ctx.focus ? 6 : 1;
+    return (levelWeight * focusWeight) / (1 + 3 * (ctx.used[id] ?? 0));
+  });
   let r = ctx.rand() * weights.reduce((a, b) => a + b, 0);
   let i = 0;
   while (i < pool.length - 1 && (r -= weights[i]) > 0) i++;
@@ -155,24 +197,32 @@ function pickExercises(k, types, ctx) {
       ...(nextGroup ? [nextGroup] : []),
     ]);
     avoid.delete(group);
-    let id = pickExercise(group, types, ctx, exclude, avoid);
-    // Fallback tiers can hand back an exercise whose main group isn't `group`; don't let
-    // that land a clash with a neighbour.
-    for (let tries = 0; tries < 5 && ids.length && exercisesClash(ids.at(-1), id); tries++) {
-      id = pickExercise(group, types, ctx, exclude, avoid);
-    }
-    ids.push(id);
+    // Neighbours: the previous exercise, and the first one when the last wraps round to it.
+    const neighbours = [i > 0 ? ids[i - 1] : null, i === k - 1 && wraps ? ids[0] : null].filter(Boolean);
+    ids.push(pickExercise(group, types, ctx, exclude, avoid, neighbours));
   });
   ctx.lastGroup = groups.at(-1);
   ctx.lastEx = ids.at(-1);
   return ids;
 }
 
-// A prescribed amount for self-paced blocks: reps for dynamic moves, seconds for holds.
-function dosed(id, scale = 1) {
+// A block item, with a band note for beginners where a band helps.
+function asItem(id, ctx) {
   const e = EXERCISES[id];
-  if (e.t === 'hold') return { ex: id, secs: Math.max(10, Math.round((e.secs * scale) / 5) * 5) };
-  return { ex: id, reps: Math.max(2, Math.round(e.reps * scale)) };
+  if (!bandHelps(e, ctx.profile)) return { ex: id };
+  return { ex: id, note: e.level > ctx.profile.level ? 'with resistance band' : 'band if needed' };
+}
+
+// A prescribed amount for self-paced blocks: reps for dynamic moves, seconds for holds.
+function dosed(id, ctx, scale = 1) {
+  const e = EXERCISES[id];
+  if (e.t === 'hold') return { ...asItem(id, ctx), secs: Math.max(10, Math.round((e.secs * scale) / 5) * 5) };
+  return { ...asItem(id, ctx), reps: Math.max(2, Math.round(e.reps * scale)) };
+}
+
+// Is there at least one usable exercise of this main group and style?
+function hasUsable(group, type, ctx) {
+  return Object.values(EXERCISES).some((e) => e.g[0] === group && e.t === type && usable(e, ctx.profile));
 }
 
 // ---------- block builders: each aims at a target length in seconds ----------
@@ -180,9 +230,9 @@ function dosed(id, scale = 1) {
 // Pull, push, then the first group again as a hold: e.g. pull-up / push-up / pull-up hold.
 // Pushes and pulls alternate, and the hold may sit next to the dynamic move of its group.
 function pushPullSuperset(ctx) {
-  const { rand, focus, usage } = ctx;
+  const { rand, usage } = ctx;
   let [a, b] = rand() < 0.5 ? ['pull', 'push'] : ['push', 'pull'];
-  if (focus === b || ctx.lastGroup === a) [a, b] = [b, a];
+  if (FOCUS_SLOT[ctx.focus] === b || ctx.lastGroup === a) [a, b] = [b, a];
   const exclude = new Set();
   const first = pickExercise(a, ['reps'], ctx, exclude, new Set(['core', 'legs', 'handstand', b]));
   const second = pickExercise(b, ['reps'], ctx, exclude, new Set(['core', 'legs', 'handstand', a]));
@@ -191,62 +241,66 @@ function pushPullSuperset(ctx) {
   usage[b] += 1;
   ctx.lastGroup = a;
   ctx.lastEx = third;
-  return [first, second, third];
+  return [first, second, third].map((id) => asItem(id, ctx));
 }
+
+const canSuperset = (ctx) => ['balanced', 'back', 'chest', 'arms'].includes(ctx.focus)
+  && ['pull', 'push'].every((g) => hasUsable(g, 'reps', ctx) && hasUsable(g, 'hold', ctx));
 
 const BUILDERS = {
   intervals(target, ctx) {
     const { rand } = ctx;
     const k = target >= 420 ? 3 : 2;
-    const superset = k === 3 && ['balanced', 'push', 'pull'].includes(ctx.focus) && rand() < 0.4;
+    const superset = k === 3 && canSuperset(ctx) && rand() < 0.4;
     const work = pick(rand, [20, 25, 30, 30, 40]);
     const rest = pick(rand, [0, 10, 15]);
     const roundRest = pick(rand, [30, 45, 60]);
     const round = k * work + (k - 1) * rest + roundRest;
     const rounds = clamp(Math.round((target + roundRest) / round), 2, 8);
-    return interval({ rounds, work, rest, roundRest }, superset ? pushPullSuperset(ctx) : pickExercises(k, ['reps', 'hold'], ctx));
+    return interval({ rounds, work, rest, roundRest }, superset ? pushPullSuperset(ctx) : pickExercises(k, ['reps', 'hold'], ctx).map((id) => asItem(id, ctx)));
   },
   tabata(target, ctx) {
     // 8 exercises × 20s on / 10s off is a 4-minute circuit; 3 circuits (12 min) when there's room.
     const minutes = clamp(Math.round(target / 60), 4, 12);
-    return tabata(pickExercises(8, ['reps', 'hold'], ctx), { minutes });
+    return tabata(pickExercises(8, ['reps', 'hold'], ctx).map((id) => asItem(id, ctx)), { minutes });
   },
   emom(target, ctx) {
     const rounds = clamp(Math.round(target / 60), 4, 20);
-    const items = pickExercises(2, ['reps'], ctx).map((id) => dosed(id, 0.6));
+    const items = pickExercises(2, ['reps'], ctx).map((id) => dosed(id, ctx, 0.6));
     return emom(60, rounds, items, 'Rest the remainder of each minute.');
   },
   amrap(target, ctx) {
     const minutes = clamp(Math.round(target / 60), 5, 25);
-    const items = pickExercises(minutes >= 10 ? 5 : 4, ['reps', 'hold'], ctx).map((id) => dosed(id));
+    const items = pickExercises(minutes >= 10 ? 5 : 4, ['reps', 'hold'], ctx).map((id) => dosed(id, ctx));
     return amrap(minutes, items);
   },
   circuit(target, ctx) {
     const k = 5;
     const rounds = clamp(Math.round(target / (k * 30)), 2, 6);
-    return circuit(rounds, pickExercises(k, ['reps', 'hold'], ctx).map((id) => dosed(id)));
+    return circuit(rounds, pickExercises(k, ['reps', 'hold'], ctx).map((id) => dosed(id, ctx)));
   },
   holds(target, ctx) {
-    const { rand, focus, usage } = ctx;
-    let group = focus;
-    if (focus === 'balanced') {
+    const { rand, usage } = ctx;
+    let group = slotFocus(ctx);
+    if (!group) {
       // Handstand work first (it's in almost every session), then the least-trained group.
       const fresh = MAIN_GROUPS.filter((g) => g !== ctx.lastGroup);
       group = usage.handstand === 0 ? 'handstand' : fresh.sort((a, b) => usage[a] - usage[b])[0];
     }
     usage[group] = (usage[group] ?? 0) + 1;
     const id = pickExercise(group, ['hold'], ctx, new Set());
-    ctx.lastGroup = group;
+    ctx.lastGroup = EXERCISES[id].g[0];
     ctx.lastEx = id;
     const work = EXERCISES[id].secs;
     const rest = pick(rand, [30, 45, 60]);
     const rounds = clamp(Math.round((target + rest) / (work + rest)), 3, 8);
-    return interval({ rounds, work, rest }, [id]);
+    return interval({ rounds, work, rest }, [asItem(id, ctx)]);
   },
 };
 
-function easyBlock(type, title, secs, rand, first) {
-  const ids = Object.keys(EXERCISES).filter((id) => EXERCISES[id].t === type && id !== first && id !== 'stretching');
+function easyBlock(type, title, secs, rand, first, profile) {
+  const needsBar = (id) => id === 'dead-hang-stretch' && !profile.equipment.includes('bar');
+  const ids = Object.keys(EXERCISES).filter((id) => EXERCISES[id].t === type && id !== first && id !== 'stretching' && !needsBar(id));
   const k = clamp(Math.round(secs / 45), 3, ids.length + (first ? 1 : 0));
   const chosen = [...(first ? [first] : []), ...shuffle(rand, ids)].slice(0, k);
   const work = Math.round(secs / k / 5) * 5;
@@ -258,7 +312,7 @@ export function workoutDuration(workout) {
   return main + TRANSITION_SECS * Math.max(0, workout.blocks.length - 1);
 }
 
-export function generateWorkout({ minutes, plan, focus = 'balanced', warmup = true, seed = 1, name }) {
+export function generateWorkout({ minutes, plan, focus = 'balanced', warmup = true, seed = 1, name, profile = DEFAULT_PROFILE }) {
   const rand = rng(seed);
   const total = minutes * 60;
   const warm = warmup ? clamp(Math.round((total * 0.1) / 60) * 60, 300, 480) : 0;
@@ -274,11 +328,11 @@ export function generateWorkout({ minutes, plan, focus = 'balanced', warmup = tr
   const sharedWeight = shared.reduce((a, k) => a + weightOf(k), 0);
   const targetOf = (k) => (useFixed && FIXED_SECS[k]) || ((useFixed ? main - fixed : main) * weightOf(k)) / sharedWeight;
 
-  const ctx = { rand, focus, used: {}, usage: { pull: 0, push: 0, core: 0.1, legs: 0.2, handstand: 0 } };
+  const ctx = { rand, focus, profile, used: {}, usage: { pull: 0, push: 0, core: 0.1, legs: 0.2, handstand: 0 } };
   const blocks = [];
-  if (warmup) blocks.push(easyBlock('warmup', 'Warm-up', warm, rand, 'jumping-jacks'));
+  if (warmup) blocks.push(easyBlock('warmup', 'Warm-up', warm, rand, 'jumping-jacks', profile));
   for (const kind of plan) blocks.push(BUILDERS[kind](targetOf(kind), ctx));
-  if (warmup) blocks.push(easyBlock('stretch', 'Cool-down', cool, rand));
+  if (warmup) blocks.push(easyBlock('stretch', 'Cool-down', cool, rand, null, profile));
 
   const focusName = FOCUS.find((f) => f.id === focus)?.name ?? 'Balanced';
   return {

@@ -1,7 +1,9 @@
 // Pure state logic: no DOM access, so it can be unit-tested with `node --test`.
 import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { routineById, EXERCISES } from './routines.js';
-import { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, BLOCK_COUNT, DEFAULT_BUILDER } from './options.js';
+import {
+  BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, BLOCK_COUNT, DEFAULT_BUILDER, LEVELS, EQUIPMENT, DEFAULT_PROFILE,
+} from './options.js';
 
 export const STORAGE_KEY = 'calisthenics.v1';
 
@@ -15,6 +17,7 @@ export function defaultState() {
     custom: [], // workouts saved from Create
     overrides: {}, // { routineId: { blockIndex: { work, rest, ... } } } timing edits
     builder: { ...DEFAULT_BUILDER, kinds: [...DEFAULT_BUILDER.kinds] },
+    profile: { ...DEFAULT_PROFILE, equipment: [...DEFAULT_PROFILE.equipment] }, // level + equipment for Suggest / Create
     settings: { rest: 90, sound: true, suggestMinutes: 60 },
   };
 }
@@ -37,11 +40,21 @@ export function normalizeState(raw) {
     custom: Array.isArray(raw.custom) ? raw.custom.filter(isWorkout) : [],
     overrides: raw.overrides && typeof raw.overrides === 'object' && !Array.isArray(raw.overrides) ? raw.overrides : {},
     builder: normalizeBuilder(raw.builder),
+    profile: normalizeProfile(raw.profile),
     settings: {
       rest: Number.isFinite(raw.settings?.rest) ? clamp(raw.settings.rest, 15, 600) : base.settings.rest,
       sound: typeof raw.settings?.sound === 'boolean' ? raw.settings.sound : base.settings.sound,
       suggestMinutes: SUGGEST_MINUTES.includes(raw.settings?.suggestMinutes) ? raw.settings.suggestMinutes : base.settings.suggestMinutes,
     },
+  };
+}
+
+function normalizeProfile(p) {
+  const d = DEFAULT_PROFILE;
+  if (!p || typeof p !== 'object') return { ...d, equipment: [...d.equipment] };
+  return {
+    level: LEVELS.some((l) => l.id === p.level) ? p.level : d.level,
+    equipment: Array.isArray(p.equipment) ? p.equipment.filter((k) => EQUIPMENT.some((e) => e.id === k)) : [...d.equipment],
   };
 }
 

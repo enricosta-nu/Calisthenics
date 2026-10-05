@@ -1,7 +1,7 @@
 import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { ROUTINES, EXERCISES, routineById } from './routines.js';
 import { generateWorkout, suggestPlan, createPlan, workoutDuration, rng } from './generator.js';
-import { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, BLOCK_COUNT } from './options.js';
+import { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, BLOCK_COUNT, LEVELS, EQUIPMENT } from './options.js';
 import {
   STORAGE_KEY, defaultState, normalizeState, buildWorkout, finishWorkout, evaluate,
   sessionTotals, stats, trackHistory, lastPerformance, stepFor, formatDuration, formatClock, clamp,
@@ -177,10 +177,35 @@ function chips(action, options, isOn, label) {
 
 const minutesOptions = (list) => list.map((m) => ({ id: m, name: `${m} min` }));
 
+// Level and equipment: one line with a Change button, opening the chips in place.
+function profileCard() {
+  const p = state.profile;
+  const level = LEVELS.find((l) => l.id === p.level);
+  const kit = EQUIPMENT.filter((e) => p.equipment.includes(e.id)).map((e) => e.name);
+  if (!ui.profileOpen) {
+    return `
+      <div class="profile-line row between">
+        <span><b>${esc(level.name)}</b> · ${esc(kit.length ? kit.join(', ') : 'No equipment')}</span>
+        <button class="btn text" data-action="pf-toggle">Change</button>
+      </div>`;
+  }
+  return `
+    <article class="card profile">
+      <div class="row between"><h3>Your level</h3><button class="btn text" data-action="pf-toggle">Done</button></div>
+      ${chips('pf-level', LEVELS, (id) => id === p.level, 'Level')}
+      <p class="muted small">${esc(level.blurb)}</p>
+      <h3>Your equipment</h3>
+      ${chips('pf-equip', EQUIPMENT, (id) => p.equipment.includes(id), 'Equipment')}
+      <p class="muted small">Floor, a wall and a chair are always assumed. Exercises that need something you don't have are left out.${p.level === 1 && p.equipment.includes('band') ? ' With a band, beginners also get band-assisted pull-ups, chin-ups and dips.' : ''}</p>
+    </article>`;
+}
+
 function suggestedWorkout() {
   const minutes = state.settings.suggestMinutes;
   const seed = ui.seeds.suggest;
-  return generateWorkout({ minutes, plan: suggestPlan(minutes, rng(seed)), seed, name: `Suggested · ${minutes} min` });
+  return generateWorkout({
+    minutes, plan: suggestPlan(minutes, rng(seed)), seed, name: `Suggested · ${minutes} min`, profile: state.profile,
+  });
 }
 
 function createdWorkout() {
@@ -188,6 +213,7 @@ function createdWorkout() {
   const seed = ui.seeds.create;
   return generateWorkout({
     minutes: b.minutes, plan: createPlan(b.kinds, b.blocks, rng(seed)), focus: b.focus, warmup: b.warmup, seed,
+    profile: state.profile,
   });
 }
 
@@ -221,6 +247,7 @@ function renderSuggest() {
   return `
     <header class="page-head"><h1>Suggested workout</h1></header>
     ${statTiles()}
+    ${profileCard()}
     <h2>How long do you have?</h2>
     ${chips('sg-min', minutesOptions(SUGGEST_MINUTES), (m) => m === state.settings.suggestMinutes, 'Duration')}
     <p class="muted small">A full-body session with warm-up and cool-down, mixing strength intervals, handstand work, a 12-minute Tabata and a finisher.</p>
@@ -234,6 +261,7 @@ function renderCreate() {
   const workout = createdWorkout();
   return `
     <header class="page-head"><h1>Create a workout</h1></header>
+    ${profileCard()}
     <article class="card builder">
       <h3>Duration</h3>
       ${chips('cr-min', minutesOptions(CREATE_MINUTES), (m) => m === b.minutes, 'Duration')}
@@ -333,6 +361,7 @@ function itemList(block, current) {
         <details>
           <summary>${amt ? `<span class="amt">${esc(amt)}</span>` : ''}${esc(ex.name)}${it.note ? ` <span class="muted">· ${esc(it.note)}</span>` : ''}</summary>
           <p class="muted small">${esc(ex.cue)}</p>
+          ${ex.main ? `<p class="muted small"><b>Works:</b> ${esc(ex.main)}${ex.secondary ? ` · <b>also:</b> ${esc(ex.secondary)}` : ''}</p>` : ''}
         </details>
       </li>`;
   }).join('')}</ul>`;
@@ -674,6 +703,8 @@ function renderHistory() {
 function renderSettings() {
   return `
     <header class="page-head"><h1>Settings</h1></header>
+    <h2>Training profile</h2>
+    ${profileCard()}
     <article class="card">
       <label class="field">
         <span>Rest between sets</span>
@@ -834,6 +865,12 @@ const actions = {
     if (kinds.includes(d.id) && kinds.length === 1) return toast('Pick at least one kind of block.');
     update(() => (state.builder.kinds = kinds.includes(d.id) ? kinds.filter((k) => k !== d.id) : [...kinds, d.id]));
   },
+  'pf-toggle': () => { ui.profileOpen = !ui.profileOpen; render(); },
+  'pf-level': (d) => update(() => (state.profile.level = Number(d.id))),
+  'pf-equip': (d) => update(() => {
+    const kit = state.profile.equipment;
+    state.profile.equipment = kit.includes(d.id) ? kit.filter((k) => k !== d.id) : [...kit, d.id];
+  }),
   'cr-focus': (d) => update(() => (state.builder.focus = d.id)),
   'cr-warmup': (d, el) => update(() => (state.builder.warmup = el.checked)),
   'cr-save': () => {
