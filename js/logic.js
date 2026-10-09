@@ -2,7 +2,8 @@
 import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { routineById, EXERCISES } from './routines.js';
 import {
-  BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, BLOCK_COUNT, DEFAULT_BUILDER, LEVELS, EQUIPMENT, DEFAULT_PROFILE,
+  MODULES, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, SKILL_BLOCKS, MAX_FINISHERS, DEFAULT_BUILDER, LEVELS, EQUIPMENT,
+  DEFAULT_PROFILE,
 } from './options.js';
 
 export const STORAGE_KEY = 'calisthenics.v1';
@@ -16,7 +17,7 @@ export function defaultState() {
     activeRoutine: null,
     custom: [], // workouts saved from Create
     overrides: {}, // { routineId: { blockIndex: { work, rest, ... } } } timing edits
-    builder: { ...DEFAULT_BUILDER, kinds: [...DEFAULT_BUILDER.kinds] },
+    builder: copyBuilder(DEFAULT_BUILDER),
     profile: { ...DEFAULT_PROFILE, equipment: [...DEFAULT_PROFILE.equipment] }, // level + equipment for Suggest / Create
     settings: { rest: 90, sound: true, suggestMinutes: 60 },
   };
@@ -58,14 +59,22 @@ function normalizeProfile(p) {
   };
 }
 
+const copyBuilder = (b) => ({ ...b, skillKinds: [...b.skillKinds], finishers: [...b.finishers] });
+const modulesOf = (part, list) => (Array.isArray(list) ? list : [])
+  .filter((id) => MODULES.some((m) => m.id === id && m.part === part));
+
+// Older saved choices (block kinds and count) don't map onto the skeleton; they reset to defaults.
 function normalizeBuilder(b) {
   const d = DEFAULT_BUILDER;
-  if (!b || typeof b !== 'object') return { ...d, kinds: [...d.kinds] };
-  const kinds = Array.isArray(b.kinds) ? b.kinds.filter((k) => BLOCK_KINDS.some((x) => x.id === k)) : [];
+  if (!b || typeof b !== 'object') return copyBuilder(d);
+  const skillKinds = [...new Set(modulesOf('skill', b.skillKinds))];
+  const finishers = modulesOf('finisher', b.finishers).slice(0, MAX_FINISHERS);
   return {
     minutes: CREATE_MINUTES.includes(b.minutes) ? b.minutes : d.minutes,
-    blocks: Number.isInteger(b.blocks) ? clamp(b.blocks, BLOCK_COUNT.min, BLOCK_COUNT.max) : d.blocks,
-    kinds: kinds.length ? kinds : [...d.kinds],
+    opener: modulesOf('opener', [b.opener])[0] ?? d.opener,
+    skillBlocks: Number.isInteger(b.skillBlocks) ? clamp(b.skillBlocks, SKILL_BLOCKS.min, SKILL_BLOCKS.max) : d.skillBlocks,
+    skillKinds: skillKinds.length ? skillKinds : [...d.skillKinds],
+    finishers: finishers.length ? finishers : [...d.finishers],
     focus: FOCUS.some((f) => f.id === b.focus) ? b.focus : d.focus,
     warmup: typeof b.warmup === 'boolean' ? b.warmup : d.warmup,
   };
@@ -440,7 +449,9 @@ export function finishRoutine(state, now = Date.now()) {
     startedAt: a.startedAt,
     endedAt: now,
     exercises: [],
-    blocks: routine.blocks.map((b, i) => ({ name: blockName(b), title: blockTitle(b), result: resultText(b, a.results[i]) })),
+    blocks: routine.blocks.map((b, i) => ({
+      name: blockName(b), title: blockTitle(b), result: resultText(b, a.results[i]), ...(b.module ? { module: b.module } : {}),
+    })),
   };
   const next = { ...state, activeRoutine: null };
   if (touched) next.sessions = [...state.sessions, session];

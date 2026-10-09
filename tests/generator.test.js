@@ -1,56 +1,110 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EXERCISES } from '../js/exercises.js';
-import { generateWorkout, suggestPlan, createPlan, workoutDuration, rng, MAIN_GROUPS, usable } from '../js/generator.js';
+import {
+  generateWorkout, suggestPlan, createPlan, skillSection, workoutDuration, rng, MAIN_GROUPS, usable, partOf,
+} from '../js/generator.js';
 import { isWorkout, blockClashes } from '../js/logic.js';
+import { moduleById } from '../js/options.js';
 
 const SEEDS = [1, 2, 3, 42, 99, 1234, 777, 2026];
+const main = (it) => EXERCISES[it.ex].g[0];
+const part = (m) => moduleById[m].part;
 
-// Exercises counted by their main muscle group.
+// Exercises counted by their slot group (push, pull, legs, core, handstand).
 function groupCounts(workout) {
   const counts = Object.fromEntries([...MAIN_GROUPS, 'handstand'].map((g) => [g, 0]));
-  for (const b of workout.blocks) for (const it of b.items) if (EXERCISES[it.ex].g.length) counts[EXERCISES[it.ex].g[0]] += 1;
+  for (const b of workout.blocks) for (const it of b.items) if (EXERCISES[it.ex].g.length) counts[main(it)] += 1;
   return counts;
 }
-
-test('suggested workouts land close to the chosen duration and cover every muscle group', () => {
-  for (const minutes of [45, 60, 90]) {
-    for (const seed of SEEDS) {
-      const w = generateWorkout({ minutes, plan: suggestPlan(minutes, rng(seed)), seed });
-      assert.ok(isWorkout(w), `${minutes}/${seed} is valid`);
-      const got = workoutDuration(w) / 60;
-      assert.ok(Math.abs(got - minutes) <= minutes * 0.1, `${minutes} min, seed ${seed}: got ${got.toFixed(1)}`);
-      const counts = groupCounts(w);
-      for (const g of MAIN_GROUPS) assert.ok(counts[g] > 0, `${minutes}/${seed} trains ${g}`);
-      assert.equal(w.blocks[0].title, 'Warm-up');
-      assert.equal(w.blocks.at(-1).title, 'Cool-down');
-    }
-  }
-});
-
-test('same options and seed give the same workout; a new seed shuffles it', () => {
-  const opts = { minutes: 60, plan: ['intervals', 'tabata', 'amrap'], focus: 'back' };
-  assert.deepEqual(generateWorkout({ ...opts, seed: 5 }), generateWorkout({ ...opts, seed: 5 }));
-  assert.notDeepEqual(generateWorkout({ ...opts, seed: 5 }), generateWorkout({ ...opts, seed: 6 }));
-});
 
 // Exercises counted by their muscle group in the approved reference.
 function muscleCounts(workout) {
   const counts = {};
   for (const b of workout.blocks) for (const it of b.items) {
-    const mg = EXERCISES[it.ex].mg;
+    const { mg } = EXERCISES[it.ex];
     if (mg) counts[mg] = (counts[mg] ?? 0) + 1;
   }
   return counts;
 }
 
-test('a focus muscle group gets more work than any other, and the main slot groups still show up', () => {
+test('suggested plans follow the skeleton: opener, skill section, finisher (split at 75 min)', () => {
+  for (const seed of SEEDS) {
+    for (const minutes of [45, 60]) {
+      const plan = suggestPlan(minutes, rng(seed));
+      assert.equal(part(plan[0]), 'opener');
+      assert.equal(part(plan.at(-1)), 'finisher');
+      assert.ok(plan.slice(1, -1).every((m) => part(m) === 'skill'), plan.join());
+      assert.equal(plan.at(-2), 'skill-holds', 'handstand right before the finisher');
+    }
+    const long = suggestPlan(75, rng(seed));
+    assert.equal(part(long[0]), 'opener');
+    assert.deepEqual(long.slice(-3).map(part), ['finisher', 'skill', 'finisher'], long.join());
+    assert.equal(long.at(-2), 'skill-holds', 'handstand between the two finishers');
+    assert.notEqual(long.at(-3), long.at(-1), 'two different finishers');
+  }
+});
+
+test('suggestions avoid repeating the last finisher', () => {
+  for (const seed of SEEDS) {
+    assert.notEqual(suggestPlan(45, rng(seed), 'amrap').at(-1), 'amrap');
+    assert.notEqual(suggestPlan(60, rng(seed), 'tabata').at(-1), 'tabata');
+  }
+});
+
+test('suggested workouts land close to 45 / 60 / 75 minutes and are valid', () => {
+  for (const minutes of [45, 60, 75]) {
+    for (const seed of SEEDS) {
+      const w = generateWorkout({ minutes, plan: suggestPlan(minutes, rng(seed)), seed });
+      assert.ok(isWorkout(w), `${minutes}/${seed} is valid`);
+      const got = workoutDuration(w) / 60;
+      assert.ok(Math.abs(got - minutes) <= minutes * 0.1, `${minutes} min, seed ${seed}: got ${got.toFixed(1)}`);
+      assert.equal(w.blocks[0].title, 'Warm-up');
+      assert.equal(w.blocks.at(-1).title, 'Cool-down');
+      for (const g of MAIN_GROUPS) assert.ok(groupCounts(w)[g] > 0, `${minutes}/${seed} trains ${g}`);
+    }
+  }
+});
+
+test('the opener is pull + push, the skill section is shoulders + core, legs only in the finisher', () => {
+  for (const seed of SEEDS) {
+    for (const opener of ['opener-strength', 'opener-emom', 'opener-circuit']) {
+      const w = generateWorkout({ minutes: 60, plan: [opener, 'skill-intervals', 'skill-holds', 'amrap'], seed });
+      const [, op, skill, holds] = w.blocks;
+      const groups = op.items.map(main);
+      assert.equal(groups[0], 'pull', `${opener}: ${groups}`);
+      assert.equal(groups[1], 'push', `${opener}: ${groups}`);
+      assert.deepEqual([EXERCISES[skill.items[0].ex].mg, EXERCISES[skill.items[1].ex].mg], ['shoulders', 'core']);
+      assert.equal(main(holds.items[0]), 'handstand', 'the first hold block is handstand work');
+      for (const b of w.blocks) {
+        if (partOf(b) === 'finisher') continue;
+        assert.ok(b.items.every((it) => EXERCISES[it.ex].mg !== 'legs'), `no legs in ${b.module}`);
+      }
+    }
+  }
+});
+
+test('createPlan builds the skeleton from the choices, splitting two finishers around the handstand', () => {
+  const base = { opener: 'opener-emom', skillBlocks: 2, skillKinds: ['skill-intervals', 'skill-holds'] };
+  assert.deepEqual(createPlan({ ...base, finishers: ['tabata'] }), ['opener-emom', 'skill-intervals', 'skill-holds', 'tabata']);
+  assert.deepEqual(createPlan({ ...base, finishers: ['tabata', 'amrap'] }), ['opener-emom', 'skill-intervals', 'tabata', 'skill-holds', 'amrap']);
+  assert.deepEqual(createPlan({ ...base, skillBlocks: 0, finishers: ['circuit'] }), ['opener-emom', 'circuit']);
+  assert.deepEqual(skillSection(3, ['skill-intervals', 'skill-holds']), ['skill-intervals', 'skill-intervals', 'skill-holds']);
+  assert.deepEqual(skillSection(1, ['skill-intervals', 'skill-holds']), ['skill-holds']);
+  assert.deepEqual(skillSection(2, ['skill-holds']), ['skill-holds', 'skill-holds']);
+});
+
+test('same options and seed give the same workout; a new seed shuffles it', () => {
+  const opts = { minutes: 60, plan: ['opener-strength', 'skill-intervals', 'skill-holds', 'amrap'], focus: 'back' };
+  assert.deepEqual(generateWorkout({ ...opts, seed: 5 }), generateWorkout({ ...opts, seed: 5 }));
+  assert.notDeepEqual(generateWorkout({ ...opts, seed: 5 }), generateWorkout({ ...opts, seed: 6 }));
+});
+
+test('a focus muscle group gets more work than any other', () => {
+  const plan = ['opener-strength', 'skill-intervals', 'skill-holds', 'tabata', 'circuit'];
   for (const focus of ['back', 'chest', 'shoulders', 'core', 'legs']) {
     for (const seed of SEEDS) {
-      const w = generateWorkout({ minutes: 60, plan: ['intervals', 'holds', 'tabata', 'circuit', 'amrap'], focus, seed });
-      const slots = groupCounts(w);
-      for (const g of MAIN_GROUPS) assert.ok(slots[g] > 0, `${focus}/${seed} trains ${g}`);
-      const counts = muscleCounts(w);
+      const counts = muscleCounts(generateWorkout({ minutes: 75, plan, focus, seed }));
       for (const [mg, n] of Object.entries(counts)) {
         if (mg !== focus) assert.ok(counts[focus] > n, `${focus}/${seed}: ${JSON.stringify(counts)}`);
       }
@@ -61,97 +115,46 @@ test('a focus muscle group gets more work than any other, and the main slot grou
 test('an Arms focus brings in more arm exercises than a balanced workout', () => {
   let arms = 0;
   let balanced = 0;
+  const plan = ['opener-strength', 'skill-intervals', 'tabata', 'circuit'];
   for (const seed of SEEDS) {
-    const plan = ['intervals', 'tabata', 'circuit', 'amrap'];
     arms += muscleCounts(generateWorkout({ minutes: 60, plan, focus: 'arms', seed })).arms ?? 0;
     balanced += muscleCounts(generateWorkout({ minutes: 60, plan, seed })).arms ?? 0;
   }
   assert.ok(arms > balanced * 1.5, `arms ${arms} vs balanced ${balanced}`);
 });
 
-test('tabata is 12 minutes when the workout has room, shorter when it does not', () => {
-  const long = generateWorkout({ minutes: 60, plan: ['intervals', 'tabata', 'amrap'], seed: 1 });
-  const tab = long.blocks.find((b) => b.title === 'Tabata');
+test('tabata is 12 minutes with 8 different exercises when there is room, shorter when not', () => {
+  const long = generateWorkout({ minutes: 60, plan: ['opener-strength', 'skill-holds', 'tabata'], seed: 1 });
+  const tab = long.blocks.find((b) => b.module === 'tabata');
   assert.equal(tab.minutes, 12);
-  assert.equal(tab.items.length, 8);
   assert.equal(new Set(tab.items.map((it) => it.ex)).size, 8);
-  const short = generateWorkout({ minutes: 30, plan: ['intervals', 'tabata', 'emom', 'amrap'], seed: 1 });
-  assert.ok(short.blocks.find((b) => b.title === 'Tabata').minutes < 12);
+  const short = generateWorkout({ minutes: 30, plan: ['opener-strength', 'skill-intervals', 'tabata', 'amrap'], seed: 1 });
+  assert.ok(short.blocks.find((b) => b.module === 'tabata').minutes < 12);
 });
 
-test('createPlan uses only the chosen kinds, in a sensible order', () => {
-  const rand = rng(3);
-  assert.deepEqual(createPlan(['amrap', 'tabata'], 4, rand), ['tabata', 'tabata', 'amrap', 'amrap']);
-  const two = createPlan(['amrap', 'tabata', 'emom', 'holds'], 2, rand);
-  assert.equal(two.length, 2);
-  assert.deepEqual(createPlan([], 1, rand), ['intervals']);
-  assert.deepEqual(createPlan(['amrap', 'emom'], 2, rand), ['emom', 'amrap']);
-});
-
-test('warm-up can be turned off, and EMOM only uses rep exercises', () => {
-  const w = generateWorkout({ minutes: 45, plan: ['emom', 'emom'], warmup: false, seed: 9 });
+test('warm-up can be turned off, and EMOMs only use rep exercises', () => {
+  const w = generateWorkout({ minutes: 30, plan: ['opener-emom', 'amrap'], warmup: false, seed: 9 });
   assert.equal(w.blocks.length, 2);
-  for (const b of w.blocks) for (const it of b.items) assert.equal(EXERCISES[it.ex].t, 'reps');
+  for (const it of w.blocks[0].items) assert.equal(EXERCISES[it.ex].t, 'reps');
 });
-
-const main = (it) => EXERCISES[it.ex].g[0];
 
 test('generated blocks never put clashing exercises next to each other', () => {
-  const plans = [
-    ['emom', 'intervals', 'holds', 'intervals', 'holds', 'tabata', 'amrap'],
-    ['emom', 'emom', 'circuit', 'amrap', 'tabata'],
-    ['intervals', 'intervals', 'intervals', 'intervals'],
-  ];
   for (const focus of ['balanced', 'back', 'chest', 'shoulders', 'arms', 'core', 'legs']) {
-    for (const plan of plans) {
+    for (const minutes of [45, 60, 75]) {
       for (const seed of SEEDS) {
-        const w = generateWorkout({ minutes: 90, plan, focus, seed });
-        for (const b of w.blocks) {
-          const groups = b.items.map(main);
-          const where = `${focus}/${seed} ${b.kind} ${b.items.map((it) => it.ex).join(',')}`;
-          assert.deepEqual(blockClashes(b), [], where);
-          // Legs and core never come up twice in a block that has room for every group.
-          const room = focus === 'shoulders' ? 5 : 4;
-          if (groups.length <= room) {
-            for (const g of ['legs', 'core']) assert.ok(groups.filter((x) => x === g).length <= 1, where);
-          }
-        }
+        const w = generateWorkout({ minutes, plan: suggestPlan(minutes, rng(seed)), focus, seed });
+        for (const b of w.blocks) assert.deepEqual(blockClashes(b), [], `${focus}/${seed} ${b.module} ${b.items.map((it) => it.ex)}`);
       }
     }
   }
 });
 
-test('push/pull supersets alternate and pair a dynamic move with a hold of the same group', () => {
-  let seen = 0;
-  for (let seed = 1; seed <= 60; seed++) {
-    const w = generateWorkout({ minutes: 90, plan: ['intervals', 'intervals', 'intervals'], seed });
-    for (const b of w.blocks.filter((x) => x.kind === 'interval' && x.items.length === 3)) {
-      const groups = b.items.map(main);
-      if (groups[0] !== groups[2]) continue;
-      seen++;
-      assert.ok(['push', 'pull'].includes(groups[0]) && ['push', 'pull'].includes(groups[1]) && groups[0] !== groups[1], groups.join(','));
-      assert.deepEqual(b.items.map((it) => EXERCISES[it.ex].t), ['reps', 'reps', 'hold']);
-    }
-  }
-  assert.ok(seen > 0, 'the superset pattern shows up');
-});
-
-test('EMOM pairs two different groups', () => {
+test('a Tabata repeats groups only when it must, never back to back', () => {
   for (const seed of SEEDS) {
-    const w = generateWorkout({ minutes: 45, plan: ['emom', 'emom', 'emom'], seed, focus: 'core' });
-    for (const b of w.blocks.filter((x) => x.kind === 'emom')) {
-      const [a, c] = b.items.map(main);
-      assert.notEqual(a, c);
-      assert.ok(a === 'core' || c === 'core', 'focus is in every block');
-    }
-  }
-});
-
-test('a focused Tabata gives the focus the extra slots', () => {
-  for (const seed of SEEDS) {
-    const w = generateWorkout({ minutes: 60, plan: ['tabata'], focus: 'legs', seed });
-    const groups = w.blocks.find((b) => b.title === 'Tabata').items.map(main);
-    assert.equal(groups.filter((g) => g === 'legs').length, 3, groups.join(','));
+    const w = generateWorkout({ minutes: 60, plan: ['opener-strength', 'tabata'], focus: 'legs', seed });
+    const groups = w.blocks.find((b) => b.module === 'tabata').items.map(main);
+    groups.forEach((g, i) => assert.notEqual(g, groups[(i + 1) % groups.length], groups.join()));
+    assert.equal(groups.filter((g) => g === 'legs').length, 3, groups.join());
   }
 });
 
@@ -166,7 +169,7 @@ const PROFILES = [
 test('only exercises that fit the level and equipment are picked', () => {
   for (const profile of PROFILES) {
     for (const seed of SEEDS) {
-      const w = generateWorkout({ minutes: 90, plan: suggestPlan(90, rng(seed)), seed, profile });
+      const w = generateWorkout({ minutes: 75, plan: suggestPlan(75, rng(seed)), seed, profile });
       for (const b of w.blocks) {
         for (const it of b.items) {
           const e = EXERCISES[it.ex];
@@ -186,18 +189,17 @@ test('only exercises that fit the level and equipment are picked', () => {
 
 test('beginners with a band get band-assisted pull-ups, chin-ups or dips; others never see band notes', () => {
   let banded = 0;
+  const plan = ['opener-strength', 'skill-intervals', 'tabata', 'amrap'];
   for (const seed of SEEDS) {
-    const w = generateWorkout({ minutes: 60, plan: ['intervals', 'tabata', 'amrap'], focus: 'back', seed, profile: PROFILES[1] });
+    const w = generateWorkout({ minutes: 60, plan, focus: 'back', seed, profile: PROFILES[1] });
     banded += w.blocks.flatMap((b) => b.items).filter((it) => it.note === 'with resistance band').length;
-    const pro = generateWorkout({ minutes: 60, plan: ['intervals', 'tabata', 'amrap'], focus: 'back', seed, profile: PROFILES[2] });
+    const pro = generateWorkout({ minutes: 60, plan, focus: 'back', seed, profile: PROFILES[2] });
     assert.ok(pro.blocks.flatMap((b) => b.items).every((it) => !it.note?.includes('band')));
   }
   assert.ok(banded > 0);
-  // without a band, a beginner never gets a level-2 bar exercise
   assert.equal(usable(EXERCISES['pull-up'], { level: 1, equipment: ['bar'] }), false);
   assert.equal(usable(EXERCISES['pull-up'], { level: 1, equipment: ['bar', 'band'] }), true);
   assert.equal(usable(EXERCISES['archer-pull-up'], { level: 1, equipment: ['bar', 'band'] }), false);
-  // the bench dip is the no-equipment alternative to the upright dip
   assert.equal(usable(EXERCISES['triceps-dip'], { level: 2, equipment: [] }), false);
   assert.equal(usable(EXERCISES['bench-dip'], { level: 2, equipment: [] }), true);
 });

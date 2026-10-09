@@ -1,7 +1,7 @@
 # Training schemes: modules and skeleton
 
-**Status: to review.** An analysis of the 12 trainings (Allenamento 1–12), as a base for building
-the Suggest and Create sections on the same structure.
+**Status: approved and built into the app.** An analysis of the 12 trainings (Allenamento 1–12),
+used to build the Suggest and Create sections on the same structure.
 
 ## The idea
 
@@ -95,9 +95,21 @@ The proposal:
 3. **Create** shows the same three parts: you pick the opener (strength intervals, EMOM or circuit), how many skill blocks and of which kind, and the finisher (Tabata, AMRAP or circuit), plus duration and focus. Timings stay editable.
 4. **Your 12 trainings** stay as they are, each block tagged with its module, so they can serve as a check that the generated ones look like yours.
 
-## Questions for you
+## Decisions
 
-1. **Training 8** (two long Tabatas, 40/30 and 30/20): a second scheme to offer (e.g. "Tabata day"), or an exception?
-2. **Training 1** (Tabata, then handstand, then Tabata): should the app sometimes split the finisher like that, or always keep the finisher at the end?
-3. **90 minutes:** what should the extra time go to: a second finisher (as in training 1), a longer skill section, or both?
-4. **Warm-up and stretching:** keep them automatic, as now?
+1. **Training 8** (two long Tabatas) is an exception: the app doesn't generate that scheme.
+2. **Split finisher:** with two finishers, the handstand block goes between them (as in training 1).
+3. **Durations:** 45 / 60 / 75 minutes. 90 is dropped, too much at this intensity. Create also offers 30.
+4. **Warm-up and stretching** stay automatic.
+
+## How the app builds it
+
+| Suggest | Skeleton |
+|---|---|
+| 45 min | opener → skill intervals → handstand holds → finisher |
+| 60 min | opener → skill intervals ×2 → handstand holds → finisher |
+| 75 min | opener → skill intervals ×2 → finisher → handstand holds → second finisher |
+
+- The opener is picked with the odds seen in your trainings (strength intervals 8 : EMOM 2 : circuit 1), and so is the finisher (AMRAP 6 : Tabata 4 : circuit 2). The finisher differs from the one in your last generated workout.
+- **Create** asks for the opener, the number and kind of skill blocks (0–3), and one or two finishers. Two finishers are split around the handstand block.
+- With a focus, the hold that ends an opener or skill round becomes a hold of that muscle group (e.g. a wall sit for Legs). Otherwise legs stay in the finisher.

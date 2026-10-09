@@ -3,9 +3,9 @@
 import { EXERCISES } from './exercises.js';
 import { interval, tabata, amrap, emom, circuit } from './routines.js';
 import { blockDuration, clamp, exercisesClash } from './logic.js';
-import { FOCUS, DEFAULT_PROFILE } from './options.js';
+import { FOCUS, DEFAULT_PROFILE, moduleById } from './options.js';
 
-export { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES } from './options.js';
+export { MODULES, PARTS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES } from './options.js';
 
 export const MAIN_GROUPS = ['pull', 'push', 'legs', 'core'];
 // Which slot group (see slotGroups) a focus muscle group lives in. Arms alternate push / pull.
@@ -13,13 +13,18 @@ const FOCUS_SLOT = { back: 'pull', chest: 'push', shoulders: 'handstand', core: 
 // Time budgeted between blocks to set up and catch your breath.
 export const TRANSITION_SECS = 60;
 
-// Strength-heavy blocks first, conditioning finishers last.
-const KIND_ORDER = ['emom', 'intervals', 'holds', 'tabata', 'circuit', 'amrap'];
-// Share of the main time each kind gets, relative to the others.
-const KIND_WEIGHT = { holds: 0.6 };
-// Kinds with a set length (seconds) when the workout has room for it.
-const FIXED_SECS = { tabata: 12 * 60 };
-const MIN_BLOCK_SECS = 180;
+// Time each module aims for (seconds): min / max, and its share of the free time.
+// Tabata is fixed at 12 minutes when there's room for it.
+const SIZE = {
+  'opener-strength': { min: 300, max: 600, weight: 1 },
+  'opener-emom': { min: 360, max: 600, weight: 1 },
+  'opener-circuit': { min: 360, max: 600, weight: 1 },
+  'skill-intervals': { min: 300, max: 600, weight: 1 },
+  'skill-holds': { min: 180, max: 420, weight: 0.6 },
+  tabata: { min: 480, max: 720, weight: 1.6, fixed: 720 },
+  amrap: { min: 480, max: 900, weight: 1.6 },
+  circuit: { min: 360, max: 720, weight: 1.4 },
+};
 
 export function rng(seed) {
   let a = seed >>> 0;
@@ -43,25 +48,51 @@ function shuffle(rand, arr) {
   return a;
 }
 
-// ---------- plans: which kinds of blocks, in which order ----------
+// ---------- plans: the skeleton, filled with modules ----------
+//   opener → skill section → finisher; with two finishers the last skill block (the handstand
+//   holds) goes between them, as in Allenamento 1.
 
-export function suggestPlan(minutes, rand) {
-  const finisher = pick(rand, ['amrap', 'amrap', 'emom', 'circuit']);
-  if (minutes <= 45) return ['intervals', 'holds', 'tabata', finisher];
-  if (minutes <= 60) return ['intervals', 'holds', 'intervals', 'tabata', finisher];
-  return ['emom', 'intervals', 'holds', 'intervals', 'holds', 'tabata', finisher];
+// How often each module appears in the 12 trainings, used to pick one.
+const OPENER_ODDS = { 'opener-strength': 8, 'opener-emom': 2, 'opener-circuit': 1 };
+const FINISHER_ODDS = { amrap: 6, tabata: 4, circuit: 2 };
+
+function weightedPick(rand, odds, skip = []) {
+  const entries = Object.entries(odds).filter(([k]) => !skip.includes(k));
+  let r = rand() * entries.reduce((a, [, w]) => a + w, 0);
+  for (const [k, w] of entries) if ((r -= w) <= 0) return k;
+  return entries.at(-1)[0];
 }
 
-export function createPlan(kinds, count, rand) {
-  const chosen = kinds.length ? kinds : ['intervals'];
-  let plan;
-  if (count <= chosen.length) {
-    plan = shuffle(rand, chosen).slice(0, count);
-  } else {
-    plan = [...chosen];
-    while (plan.length < count) plan.push(chosen[plan.length % chosen.length]);
+// Two finishers: the last skill block sits between them.
+function assemble(opener, skill, finishers) {
+  if (finishers.length < 2 || !skill.length) return [opener, ...skill, ...finishers];
+  return [opener, ...skill.slice(0, -1), finishers[0], skill.at(-1), finishers[1]];
+}
+
+// `lastFinisher` (from history) is avoided so sessions don't repeat the same finisher.
+export function suggestPlan(minutes, rand, lastFinisher = null) {
+  const opener = weightedPick(rand, OPENER_ODDS);
+  const first = weightedPick(rand, FINISHER_ODDS, [lastFinisher]);
+  if (minutes >= 75) {
+    const second = weightedPick(rand, FINISHER_ODDS, [first]);
+    return assemble(opener, ['skill-intervals', 'skill-intervals', 'skill-holds'], [first, second]);
   }
-  return plan.sort((a, b) => KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b));
+  // 60 min: a longer skill section, as in Allenamento 3, 4, 7 and 12 plus one more block.
+  if (minutes >= 60) return assemble(opener, ['skill-intervals', 'skill-intervals', 'skill-holds'], [first]);
+  return assemble(opener, ['skill-intervals', 'skill-holds'], [first]);
+}
+
+// Skill blocks for Create: with both kinds chosen, intervals first and the holds last
+// (handstand before the finisher, as in the trainings).
+export function skillSection(count, kinds) {
+  if (!count || !kinds.length) return [];
+  if (kinds.length === 1) return Array(count).fill(kinds[0]);
+  if (count === 1) return ['skill-holds'];
+  return [...Array(count - 1).fill('skill-intervals'), 'skill-holds'];
+}
+
+export function createPlan({ opener, skillBlocks, skillKinds, finishers }) {
+  return assemble(opener, skillSection(skillBlocks, skillKinds), finishers.length ? finishers : ['amrap']);
 }
 
 // ---------- exercise selection ----------
@@ -220,83 +251,160 @@ function dosed(id, ctx, scale = 1) {
   return { ...asItem(id, ctx), reps: Math.max(2, Math.round(e.reps * scale)) };
 }
 
-// Is there at least one usable exercise of this main group and style?
-function hasUsable(group, type, ctx) {
-  return Object.values(EXERCISES).some((e) => e.g[0] === group && e.t === type && usable(e, ctx.profile));
+// Pick an exercise of one muscle group (the reference's mg), falling back to the slot group.
+const MG_SLOT = { back: 'pull', chest: 'push', shoulders: 'handstand', arms: 'push', core: 'core', legs: 'legs' };
+
+function pickMuscle(mg, types, ctx, exclude, neighbours = [], extra = () => true) {
+  const noClash = (id) => !neighbours.some((n) => exercisesClash(n, id));
+  const pool = Object.entries(EXERCISES).filter(([id, e]) =>
+    e.mg === mg && types.includes(e.t) && !exclude.has(id) && usable(e, ctx.profile) && noClash(id) && extra(e, id));
+  let id;
+  if (pool.length) {
+    const weights = pool.map(([pid, e]) => {
+      const gap = ctx.profile.level - effectiveLevel(e, ctx.profile);
+      const levelWeight = e.level > ctx.profile.level ? 1.5 : gap === 0 ? 3 : gap === 1 ? 1.5 : 0.6;
+      return levelWeight / (1 + 3 * (ctx.used[pid] ?? 0));
+    });
+    let r = ctx.rand() * weights.reduce((x, y) => x + y, 0);
+    let i = 0;
+    while (i < pool.length - 1 && (r -= weights[i]) > 0) i++;
+    id = pool[i][0];
+    ctx.used[id] = (ctx.used[id] ?? 0) + 1;
+    exclude.add(id);
+  } else {
+    id = pickExercise(MG_SLOT[mg], types, ctx, exclude, new Set(), neighbours);
+  }
+  const g = EXERCISES[id].g[0];
+  if (g) ctx.usage[g] = (ctx.usage[g] ?? 0) + 1;
+  return id;
 }
 
-// ---------- block builders: each aims at a target length in seconds ----------
+const HANDSTAND_HOLDS = ['handstand', 'wall-handstand', 'box-pike-handstand'];
+// Prep moves that don't make a strength opener on their own.
+const NOT_OPENER = ['scapular-pull', 'dead-hang', 'negative-pull-up'];
+const openerMove = (e, id) => !NOT_OPENER.includes(id);
 
-// Pull, push, then the first group again as a hold: e.g. pull-up / push-up / pull-up hold.
-// Pushes and pulls alternate, and the hold may sit next to the dynamic move of its group.
-function pushPullSuperset(ctx) {
-  const { rand, usage } = ctx;
-  let [a, b] = rand() < 0.5 ? ['pull', 'push'] : ['push', 'pull'];
-  if (FOCUS_SLOT[ctx.focus] === b || ctx.lastGroup === a) [a, b] = [b, a];
-  const exclude = new Set();
-  const first = pickExercise(a, ['reps'], ctx, exclude, new Set(['core', 'legs', 'handstand', b]));
-  const second = pickExercise(b, ['reps'], ctx, exclude, new Set(['core', 'legs', 'handstand', a]));
-  const third = pickExercise(a, ['hold'], ctx, exclude, new Set(['core', 'legs', 'handstand', b]));
-  usage[a] += 2;
-  usage[b] += 1;
-  ctx.lastGroup = a;
-  ctx.lastEx = third;
-  return [first, second, third].map((id) => asItem(id, ctx));
+function endBlock(ctx, ids) {
+  ctx.lastEx = ids.at(-1);
+  ctx.lastGroup = EXERCISES[ctx.lastEx].g[0];
 }
 
-const canSuperset = (ctx) => ['balanced', 'back', 'chest', 'arms'].includes(ctx.focus)
-  && ['pull', 'push'].every((g) => hasUsable(g, 'reps', ctx) && hasUsable(g, 'hold', ctx));
+// The hold that ends a round of 3: a hold of the focus group when there is one (so a Legs or
+// Core focus shows up outside the finisher too), otherwise `fallback`.
+function roundHold(ctx, fallback) {
+  return ['chest', 'arms', 'legs', 'core'].includes(ctx.focus) ? ctx.focus : fallback;
+}
+
+// Opener muscles: pull + push; a Chest or Shoulders focus starts with the push.
+function openerPair(ctx) {
+  return ['chest', 'shoulders'].includes(ctx.focus) ? ['chest', 'back'] : ['back', 'chest'];
+}
 
 const BUILDERS = {
-  intervals(target, ctx) {
+  // M1 · pull + push back to back (+ a hold of the first group), 15–20s, no rest, ~30s between rounds.
+  'opener-strength'(target, ctx) {
     const { rand } = ctx;
     const k = target >= 420 ? 3 : 2;
-    const superset = k === 3 && canSuperset(ctx) && rand() < 0.4;
-    const work = pick(rand, [20, 25, 30, 30, 40]);
-    const rest = pick(rand, [0, 10, 15]);
-    const roundRest = pick(rand, [30, 45, 60]);
-    const round = k * work + (k - 1) * rest + roundRest;
-    const rounds = clamp(Math.round((target + roundRest) / round), 2, 8);
-    return interval({ rounds, work, rest, roundRest }, superset ? pushPullSuperset(ctx) : pickExercises(k, ['reps', 'hold'], ctx).map((id) => asItem(id, ctx)));
+    const work = pick(rand, [15, 20, 20]);
+    const roundRest = 30;
+    const rounds = clamp(Math.round((target + roundRest) / (k * work + roundRest)), 4, 6);
+    const [a, b] = openerPair(ctx);
+    const ex = new Set();
+    const ids = [pickMuscle(a, ['reps'], ctx, ex, [ctx.lastEx].filter(Boolean), openerMove)];
+    ids.push(pickMuscle(b, ['reps'], ctx, ex, [ids[0]], openerMove));
+    if (k === 3) ids.push(pickMuscle(roundHold(ctx, a), ['hold'], ctx, ex, [ids[1], ids[0]]));
+    endBlock(ctx, ids);
+    return interval({ rounds, work, rest: 0, roundRest }, ids.map((id) => asItem(id, ctx)));
   },
+  // M2 · pull + push reps every minute (or 1:15).
+  'opener-emom'(target, ctx) {
+    const every = pick(ctx.rand, [60, 60, 75]);
+    const rounds = clamp(Math.round(target / every), 5, 10);
+    const [a, b] = openerPair(ctx);
+    const ex = new Set();
+    const ids = [pickMuscle(a, ['reps'], ctx, ex, [], openerMove)];
+    ids.push(pickMuscle(b, ['reps'], ctx, ex, [ids[0]], openerMove));
+    endBlock(ctx, ids);
+    return emom(every, rounds, ids.map((id) => dosed(id, ctx, 0.6)), 'Rest the remainder of each minute.');
+  },
+  // M7 as opener · pull, push and core reps, at your own pace.
+  'opener-circuit'(target, ctx) {
+    const rounds = clamp(Math.round(target / 120), 3, 5);
+    const [a, b] = openerPair(ctx);
+    const ex = new Set();
+    const ids = [pickMuscle(a, ['reps'], ctx, ex, [], openerMove)];
+    ids.push(pickMuscle(b, ['reps'], ctx, ex, [ids[0]], openerMove));
+    ids.push(pickMuscle('core', ['reps'], ctx, ex, [ids[1], ids[0]]));
+    endBlock(ctx, ids);
+    return circuit(rounds, ids.map((id) => dosed(id, ctx)));
+  },
+  // M3 · shoulders + core (+ a pull hold), 20–30s each, ×4.
+  'skill-intervals'(target, ctx) {
+    const { rand } = ctx;
+    const k = target >= 420 ? 3 : 2;
+    const work = pick(rand, [20, 25, 30]);
+    const roundRest = pick(rand, [30, 40]);
+    const rounds = clamp(Math.round((target + roundRest) / (k * work + roundRest)), 3, 5);
+    const ex = new Set();
+    // Not the handstand holds themselves: they're for the holds block.
+    const notHandstand = (e, id) => !HANDSTAND_HOLDS.includes(id);
+    const ids = [pickMuscle('shoulders', ['reps', 'hold'], ctx, ex, [ctx.lastEx].filter(Boolean), notHandstand)];
+    ids.push(pickMuscle('core', ['reps', 'hold'], ctx, ex, [ids[0]]));
+    if (k === 3) {
+      ids.push(pickMuscle(roundHold(ctx, 'back'), ['hold'], ctx, ex, [ids[1], ids[0]]));
+    }
+    endBlock(ctx, ids);
+    return interval({ rounds, work, rest: 0, roundRest }, ids.map((id) => asItem(id, ctx)));
+  },
+  // M4 · one hold ×4. The first is handstand work; a second one is another hold (pull, core, planche).
+  'skill-holds'(target, ctx) {
+    const { rand } = ctx;
+    ctx.holdsBlocks = (ctx.holdsBlocks ?? 0) + 1;
+    const handstandFirst = ctx.holdsBlocks === 1;
+    const ex = new Set();
+    const id = handstandFirst
+      ? pickMuscle('shoulders', ['hold'], ctx, ex, [ctx.lastEx].filter(Boolean), (e) => e.g[0] === 'handstand')
+      : pickMuscle(pick(rand, ['back', 'core', 'shoulders']), ['hold'], ctx, ex, [ctx.lastEx].filter(Boolean));
+    endBlock(ctx, [id]);
+    const work = EXERCISES[id].secs;
+    const rest = 30;
+    const rounds = clamp(Math.round((target + rest) / (work + rest)), 3, 6);
+    return interval({ rounds, work, rest }, [asItem(id, ctx)]);
+  },
+  // M5 · 8 exercises × 20s on / 10s off, every muscle group; 12 min when there's room.
   tabata(target, ctx) {
-    // 8 exercises × 20s on / 10s off is a 4-minute circuit; 3 circuits (12 min) when there's room.
     const minutes = clamp(Math.round(target / 60), 4, 12);
     return tabata(pickExercises(8, ['reps', 'hold'], ctx).map((id) => asItem(id, ctx)), { minutes });
   },
-  emom(target, ctx) {
-    const rounds = clamp(Math.round(target / 60), 4, 20);
-    const items = pickExercises(2, ['reps'], ctx).map((id) => dosed(id, ctx, 0.6));
-    return emom(60, rounds, items, 'Rest the remainder of each minute.');
-  },
+  // M6 · as many rounds as possible, every muscle group.
   amrap(target, ctx) {
-    const minutes = clamp(Math.round(target / 60), 5, 25);
+    const minutes = clamp(Math.round(target / 60), 5, 15);
     const items = pickExercises(minutes >= 10 ? 5 : 4, ['reps', 'hold'], ctx).map((id) => dosed(id, ctx));
     return amrap(minutes, items);
   },
+  // M7 · rounds at your own pace, every muscle group.
   circuit(target, ctx) {
     const k = 5;
-    const rounds = clamp(Math.round(target / (k * 30)), 2, 6);
+    const rounds = clamp(Math.round(target / (k * 30)), 2, 5);
     return circuit(rounds, pickExercises(k, ['reps', 'hold'], ctx).map((id) => dosed(id, ctx)));
   },
-  holds(target, ctx) {
-    const { rand, usage } = ctx;
-    let group = slotFocus(ctx);
-    if (!group) {
-      // Handstand work first (it's in almost every session), then the least-trained group.
-      const fresh = MAIN_GROUPS.filter((g) => g !== ctx.lastGroup);
-      group = usage.handstand === 0 ? 'handstand' : fresh.sort((a, b) => usage[a] - usage[b])[0];
-    }
-    usage[group] = (usage[group] ?? 0) + 1;
-    const id = pickExercise(group, ['hold'], ctx, new Set());
-    ctx.lastGroup = EXERCISES[id].g[0];
-    ctx.lastEx = id;
-    const work = EXERCISES[id].secs;
-    const rest = pick(rand, [30, 45, 60]);
-    const rounds = clamp(Math.round((target + rest) / (work + rest)), 3, 8);
-    return interval({ rounds, work, rest }, [asItem(id, ctx)]);
-  },
 };
+
+// Seconds each module gets: Tabata its fixed 12 minutes when everything else still fits,
+// the rest shared by weight, each kept within its min / max.
+export function moduleTargets(plan, main) {
+  const fixed = plan.filter((m) => SIZE[m].fixed);
+  const flexible = plan.filter((m) => !SIZE[m].fixed);
+  const fixedTotal = fixed.reduce((a, m) => a + SIZE[m].fixed, 0);
+  const useFixed = fixed.length > 0 && main - fixedTotal >= flexible.reduce((a, m) => a + SIZE[m].min, 0);
+  const shared = useFixed ? flexible : plan;
+  const free = useFixed ? main - fixedTotal : main;
+  const weight = shared.reduce((a, m) => a + SIZE[m].weight, 0);
+  return plan.map((m) => {
+    if (useFixed && SIZE[m].fixed) return SIZE[m].fixed;
+    return clamp((free * SIZE[m].weight) / weight, SIZE[m].min, SIZE[m].max);
+  });
+}
 
 function easyBlock(type, title, secs, rand, first, profile) {
   const needsBar = (id) => id === 'dead-hang-stretch' && !profile.equipment.includes('bar');
@@ -318,21 +426,14 @@ export function generateWorkout({ minutes, plan, focus = 'balanced', warmup = tr
   const warm = warmup ? clamp(Math.round((total * 0.1) / 60) * 60, 300, 480) : 0;
   const cool = warmup ? clamp(Math.round((total * 0.07) / 60) * 60, 180, 420) : 0;
   const transitions = TRANSITION_SECS * (plan.length + (warmup ? 2 : 0) - 1);
-  const main = Math.max(plan.length * 180, total - warm - cool - transitions);
-  const weightOf = (k) => KIND_WEIGHT[k] ?? 1;
-  // Give fixed-length blocks their time first if what's left still fits the others.
-  const fixed = plan.reduce((a, k) => a + (FIXED_SECS[k] ?? 0), 0);
-  const flexible = plan.filter((k) => !FIXED_SECS[k]);
-  const useFixed = fixed > 0 && main - fixed >= flexible.length * MIN_BLOCK_SECS;
-  const shared = useFixed ? flexible : plan;
-  const sharedWeight = shared.reduce((a, k) => a + weightOf(k), 0);
-  const targetOf = (k) => (useFixed && FIXED_SECS[k]) || ((useFixed ? main - fixed : main) * weightOf(k)) / sharedWeight;
+  const main = total - warm - cool - transitions;
+  const targets = moduleTargets(plan, main);
 
   const ctx = { rand, focus, profile, used: {}, usage: { pull: 0, push: 0, core: 0.1, legs: 0.2, handstand: 0 } };
   const blocks = [];
-  if (warmup) blocks.push(easyBlock('warmup', 'Warm-up', warm, rand, 'jumping-jacks', profile));
-  for (const kind of plan) blocks.push(BUILDERS[kind](targetOf(kind), ctx));
-  if (warmup) blocks.push(easyBlock('stretch', 'Cool-down', cool, rand, null, profile));
+  if (warmup) blocks.push({ ...easyBlock('warmup', 'Warm-up', warm, rand, 'jumping-jacks', profile), module: 'warmup' });
+  plan.forEach((m, i) => blocks.push({ ...BUILDERS[m](targets[i], ctx), module: m }));
+  if (warmup) blocks.push({ ...easyBlock('stretch', 'Cool-down', cool, rand, null, profile), module: 'cooldown' });
 
   const focusName = FOCUS.find((f) => f.id === focus)?.name ?? 'Balanced';
   return {
@@ -342,4 +443,10 @@ export function generateWorkout({ minutes, plan, focus = 'balanced', warmup = tr
     focus,
     blocks,
   };
+}
+
+// The part of the skeleton a block belongs to, for labels.
+export function partOf(block) {
+  if (block.module === 'warmup' || block.module === 'cooldown') return block.module;
+  return moduleById[block.module]?.part ?? null;
 }

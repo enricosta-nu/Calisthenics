@@ -1,7 +1,9 @@
 import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { ROUTINES, EXERCISES, routineById } from './routines.js';
-import { generateWorkout, suggestPlan, createPlan, workoutDuration, rng } from './generator.js';
-import { BLOCK_KINDS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, BLOCK_COUNT, LEVELS, EQUIPMENT } from './options.js';
+import { generateWorkout, suggestPlan, createPlan, workoutDuration, rng, partOf } from './generator.js';
+import {
+  MODULES, PARTS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, SKILL_BLOCKS, MAX_FINISHERS, LEVELS, EQUIPMENT,
+} from './options.js';
 import {
   STORAGE_KEY, defaultState, normalizeState, buildWorkout, finishWorkout, evaluate,
   sessionTotals, stats, trackHistory, lastPerformance, stepFor, formatDuration, formatClock, clamp,
@@ -200,11 +202,20 @@ function profileCard() {
     </article>`;
 }
 
+// The finisher of the most recent generated workout, so the next suggestion uses a different one.
+function lastFinisher() {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const fin = state.sessions[i].blocks?.find((b) => MODULES.some((m) => m.id === b.module && m.part === 'finisher'));
+    if (fin) return fin.module;
+  }
+  return null;
+}
+
 function suggestedWorkout() {
   const minutes = state.settings.suggestMinutes;
   const seed = ui.seeds.suggest;
   return generateWorkout({
-    minutes, plan: suggestPlan(minutes, rng(seed)), seed, name: `Suggested · ${minutes} min`, profile: state.profile,
+    minutes, plan: suggestPlan(minutes, rng(seed), lastFinisher()), seed, name: `Suggested · ${minutes} min`, profile: state.profile,
   });
 }
 
@@ -212,15 +223,18 @@ function createdWorkout() {
   const b = state.builder;
   const seed = ui.seeds.create;
   return generateWorkout({
-    minutes: b.minutes, plan: createPlan(b.kinds, b.blocks, rng(seed)), focus: b.focus, warmup: b.warmup, seed,
+    minutes: b.minutes, plan: createPlan(b), focus: b.focus, warmup: b.warmup, seed,
     profile: state.profile,
   });
 }
 
 // Full block-by-block view of a workout, used for previews.
+const PART_LABEL = { warmup: 'Warm-up', cooldown: 'Stretching', ...Object.fromEntries(PARTS.map((p) => [p.id, p.name])) };
+
 function workoutBlocks(workout) {
   return workout.blocks.map((b, i) => `
     <div class="block-preview">
+      ${partOf(b) && partOf(b) !== 'warmup' && partOf(b) !== 'cooldown' ? `<p class="eyebrow">${esc(PART_LABEL[partOf(b)])}${b.module ? ` · ${esc(MODULES.find((m) => m.id === b.module)?.name ?? '')}` : ''}</p>` : ''}
       <p><b>${i + 1}. ${esc(blockName(b))}</b> <span class="muted small">${esc(blockTitle(b))}</span></p>
       ${b.note ? `<p class="muted small">${esc(b.note)}</p>` : ''}
       ${itemList(b)}
@@ -250,11 +264,13 @@ function renderSuggest() {
     ${profileCard()}
     <h2>How long do you have?</h2>
     ${chips('sg-min', minutesOptions(SUGGEST_MINUTES), (m) => m === state.settings.suggestMinutes, 'Duration')}
-    <p class="muted small">A full-body session with warm-up and cool-down, mixing strength intervals, handstand work, a 12-minute Tabata and a finisher.</p>
+    <p class="muted small">Built like your trainings: warm-up, an opener (pull + push), a skill section (shoulders, core, handstand), a finisher, then stretching. At 75 min the finisher is split around the handstand.</p>
     ${workoutPreview(workout, `
       <button class="btn secondary" data-action="shuffle" data-which="suggest">↻ Shuffle</button>
       <button class="btn primary grow" data-action="gen-start" data-which="suggest">Start workout</button>`)}`;
 }
+
+const modulesFor = (part) => MODULES.filter((m) => m.part === part);
 
 function renderCreate() {
   const b = state.builder;
@@ -265,17 +281,20 @@ function renderCreate() {
     <article class="card builder">
       <h3>Duration</h3>
       ${chips('cr-min', minutesOptions(CREATE_MINUTES), (m) => m === b.minutes, 'Duration')}
+      <h3>1 · Opener</h3>
+      ${chips('cr-opener', modulesFor('opener'), (id) => id === b.opener, 'Opener')}
       <div class="field">
-        <h3>Blocks of work</h3>
+        <h3>2 · Skill section</h3>
         <div class="stepper">
-          <button data-action="cr-blocks" data-d="-1" aria-label="one block less">−</button>
-          <output>${b.blocks}</output>
-          <button data-action="cr-blocks" data-d="1" aria-label="one block more">+</button>
+          <button data-action="cr-skill" data-d="-1" aria-label="one skill block less">−</button>
+          <output>${b.skillBlocks}</output>
+          <button data-action="cr-skill" data-d="1" aria-label="one skill block more">+</button>
         </div>
       </div>
-      <h3>Kinds of blocks</h3>
-      ${chips('cr-kind', BLOCK_KINDS, (k) => b.kinds.includes(k), 'Kinds of blocks')}
-      <p class="muted small">${esc(BLOCK_KINDS.filter((k) => b.kinds.includes(k.id)).map((k) => `${k.name}: ${k.blurb}`).join(' · '))}</p>
+      ${b.skillBlocks ? chips('cr-skillkind', modulesFor('skill'), (id) => b.skillKinds.includes(id), 'Skill blocks') : '<p class="muted small">No skill section.</p>'}
+      <h3>3 · Finisher</h3>
+      ${chips('cr-finisher', modulesFor('finisher'), (id) => b.finishers.includes(id), 'Finisher')}
+      <p class="muted small">${b.finishers.length > 1 ? 'Two finishers: the handstand block goes between them.' : 'Pick two to split the finisher around the handstand block.'}</p>
       <h3>Focus</h3>
       ${chips('cr-focus', FOCUS, (f) => f === b.focus, 'Focus')}
       <p class="muted small">${b.focus === 'balanced' ? 'Every muscle group gets the same attention.' : `Every group is still trained; ${esc(FOCUS.find((f) => f.id === b.focus).blurb.toLowerCase())} get extra work.`}</p>
@@ -859,11 +878,21 @@ const actions = {
   shuffle: (d) => { ui.seeds[d.which] = newSeed(); render(); },
   'sg-min': (d) => update(() => (state.settings.suggestMinutes = Number(d.id))),
   'cr-min': (d) => update(() => (state.builder.minutes = Number(d.id))),
-  'cr-blocks': (d) => update(() => (state.builder.blocks = clamp(state.builder.blocks + Number(d.d), BLOCK_COUNT.min, BLOCK_COUNT.max))),
-  'cr-kind': (d) => {
-    const kinds = state.builder.kinds;
-    if (kinds.includes(d.id) && kinds.length === 1) return toast('Pick at least one kind of block.');
-    update(() => (state.builder.kinds = kinds.includes(d.id) ? kinds.filter((k) => k !== d.id) : [...kinds, d.id]));
+  'cr-opener': (d) => update(() => (state.builder.opener = d.id)),
+  'cr-skill': (d) => update(() => (state.builder.skillBlocks = clamp(state.builder.skillBlocks + Number(d.d), SKILL_BLOCKS.min, SKILL_BLOCKS.max))),
+  'cr-skillkind': (d) => {
+    const kinds = state.builder.skillKinds;
+    if (kinds.includes(d.id) && kinds.length === 1) return toast('Pick at least one kind of skill block.');
+    update(() => (state.builder.skillKinds = kinds.includes(d.id) ? kinds.filter((k) => k !== d.id) : [...kinds, d.id]));
+  },
+  'cr-finisher': (d) => {
+    const fins = state.builder.finishers;
+    if (fins.includes(d.id)) {
+      if (fins.length === 1) return toast('Pick at least one finisher.');
+      return update(() => (state.builder.finishers = fins.filter((f) => f !== d.id)));
+    }
+    // Up to two; a third choice replaces the oldest.
+    update(() => (state.builder.finishers = [...fins, d.id].slice(-MAX_FINISHERS)));
   },
   'pf-toggle': () => { ui.profileOpen = !ui.profileOpen; render(); },
   'pf-level': (d) => update(() => (state.profile.level = Number(d.id))),

@@ -1,13 +1,25 @@
 // Choices offered in the Suggest and Create sections.
 
-export const BLOCK_KINDS = [
-  { id: 'intervals', name: 'Intervals', blurb: 'Timed rounds, e.g. 30s on / 15s off' },
-  { id: 'tabata', name: 'Tabata', blurb: '20s on / 10s off for 12 min' },
-  { id: 'emom', name: 'EMOM', blurb: 'Every minute on the minute' },
-  { id: 'amrap', name: 'AMRAP', blurb: 'As many rounds as possible' },
-  { id: 'circuit', name: 'Circuit', blurb: 'Rounds at your own pace' },
-  { id: 'holds', name: 'Skill holds', blurb: 'Handstand, L-sit, isometrics' },
+// The modules a training is built from (docs/training-schemes.md), grouped by the part of the
+// skeleton they belong to:  warm-up → opener → skill section → finisher → stretching.
+export const PARTS = [
+  { id: 'opener', name: 'Opener', blurb: 'Pull + push to start' },
+  { id: 'skill', name: 'Skill section', blurb: 'Shoulders, core and handstand' },
+  { id: 'finisher', name: 'Finisher', blurb: 'Everything, high intensity' },
 ];
+
+export const MODULES = [
+  { id: 'opener-strength', part: 'opener', name: 'Strength intervals', blurb: 'Pull + push back to back, 15–20s, ×4' },
+  { id: 'opener-emom', part: 'opener', name: 'EMOM', blurb: 'Pull + push reps every minute' },
+  { id: 'opener-circuit', part: 'opener', name: 'Circuit', blurb: 'Pull, push and core reps, 4 rounds' },
+  { id: 'skill-intervals', part: 'skill', name: 'Skill intervals', blurb: 'Shoulders + core, 20–30s, ×4' },
+  { id: 'skill-holds', part: 'skill', name: 'Skill holds', blurb: 'Handstand and other holds, 4 × 20–30s' },
+  { id: 'tabata', part: 'finisher', name: 'Tabata', blurb: '20s on / 10s off for 12 min' },
+  { id: 'amrap', part: 'finisher', name: 'AMRAP', blurb: 'As many rounds as possible, 10–15 min' },
+  { id: 'circuit', part: 'finisher', name: 'Circuit', blurb: 'Rounds at your own pace' },
+];
+
+export const moduleById = Object.fromEntries(MODULES.map((m) => [m.id, m]));
 
 // The muscle groups of the approved exercise reference (docs/exercises/).
 export const FOCUS = [
@@ -38,14 +50,18 @@ export const EQUIPMENT = [
 
 export const DEFAULT_PROFILE = { level: 2, equipment: ['bar', 'lowbar', 'dip', 'parallettes'] };
 
-export const SUGGEST_MINUTES = [45, 60, 90];
-export const CREATE_MINUTES = [30, 45, 60, 75, 90];
-export const BLOCK_COUNT = { min: 1, max: 8 };
+// 90 minutes is too much at this intensity.
+export const SUGGEST_MINUTES = [45, 60, 75];
+export const CREATE_MINUTES = [30, 45, 60, 75];
+export const SKILL_BLOCKS = { min: 0, max: 3 };
+export const MAX_FINISHERS = 2;
 
 export const DEFAULT_BUILDER = {
   minutes: 60,
-  blocks: 4,
-  kinds: ['intervals', 'holds', 'tabata', 'amrap'],
+  opener: 'opener-strength',
+  skillBlocks: 2,
+  skillKinds: ['skill-intervals', 'skill-holds'],
+  finishers: ['amrap'],
   focus: 'balanced',
   warmup: true,
 };
