@@ -9,7 +9,7 @@ import {
   sessionTotals, stats, trackHistory, lastPerformance, stepFor, formatDuration, formatClock, clamp,
   blockPhases, blockDuration, blockTitle, blockName, phaseAt, startRoutine, routineElapsed, finishRoutine,
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
-  INTENSITY_RANGE, intensityOf, applyIntensity, intensify,
+  INTENSITY_RANGE, intensityOf, applyIntensity, intensify, FEELINGS, feelingOf, intensityAdvice, rateSession,
 } from './logic.js';
 
 // ---------- state ----------
@@ -262,12 +262,19 @@ function intensityControl(key) {
       <div>
         <span class="muted small">Intensity</span> <b>${esc(info.name)}</b>
         <p class="muted small">${esc(info.blurb)}</p>
+        ${lastFeeling(key)}
       </div>
       <div class="stepper">
         <button data-action="intensity" data-key="${esc(key)}" data-d="-1" aria-label="easier" ${step <= INTENSITY_RANGE.min ? 'disabled' : ''}>−</button>
         <button data-action="intensity" data-key="${esc(key)}" data-d="1" aria-label="harder" ${step >= INTENSITY_RANGE.max ? 'disabled' : ''}>+</button>
       </div>
     </div>`;
+}
+
+function lastFeeling(key) {
+  const f = state.feelings[key];
+  if (!f) return '';
+  return `<p class="small last-feel">Last time · ${fmtDate(f.at)}: <b>${f.feel}/5 ${esc(feelingOf(f.feel).name)}</b> at ${esc(intensityOf(f.intensity).name)}</p>`;
 }
 
 // A workout as it will be played: intensity first, then the user's own timing edits on top.
@@ -728,7 +735,7 @@ function renderHistory() {
         <button class="row between plain" data-action="toggle" data-i="${idx}" aria-expanded="${open}">
           <div>
             <h3>${esc(sess.name)}</h3>
-            <p class="muted small">${fmtDate(sess.startedAt)} · ${formatDuration(sess.endedAt - sess.startedAt)}</p>
+            <p class="muted small">${fmtDate(sess.startedAt)} · ${formatDuration(sess.endedAt - sess.startedAt)}${sess.feel ? ` · felt ${sess.feel}/5` : ''}</p>
           </div>
           <div class="right small">
             ${isRoutine
@@ -786,6 +793,19 @@ function renderSettings() {
     <p class="muted small center">Calisthenics · works offline · add to your home screen to install.</p>`;
 }
 
+function ratingPanel(session) {
+  if (session.feel) {
+    return `<p class="rated">Thanks! You rated it <b>${session.feel}/5 · ${esc(feelingOf(session.feel).name)}</b>. Next time you start it, you'll be asked whether to change the intensity.</p>`;
+  }
+  return `
+    <div class="rate">
+      <p><b>How did it feel?</b></p>
+      <div class="rate-buttons">
+        ${FEELINGS.map((f) => `<button class="btn secondary" data-action="rate" data-v="${f.value}"><b>${f.value}</b><small>${esc(f.name)}</small></button>`).join('')}
+      </div>
+    </div>`;
+}
+
 function renderOverlay() {
   if (ui.summary) {
     const { session, suggestions } = ui.summary;
@@ -803,7 +823,28 @@ function renderOverlay() {
             <p>${s.kind === 'advance' ? `<b>Level up!</b> You maxed out ${esc(s.from)}. Move on to <b>${esc(s.to)}</b>?` : `${esc(s.from)} was tough today. Step back to <b>${esc(s.to)}</b> for a while?`}</p>
             <button class="btn ${s.kind === 'advance' ? 'primary' : 'secondary'}" data-action="apply" data-track="${s.track}" data-level="${s.level}">${s.kind === 'advance' ? 'Level up' : 'Step back'}</button>
           </div>`).join('')}
-        <button class="btn ghost full" data-action="close-summary">Done</button>
+        ${session?.kind === 'routine' ? ratingPanel(session) : ''}
+        <button class="btn ghost full" data-action="close-summary">${session?.kind === 'routine' && !session.feel ? 'Skip' : 'Done'}</button>
+      </div>`;
+  }
+  if (ui.pendingStart) {
+    const { target, advice } = ui.pendingStart;
+    const key = keyOf(target);
+    const f = state.feelings[key];
+    const name = target.type === 'rt'
+      ? (state.custom.find((w) => w.id === target.id) ?? routineById[target.id]).name
+      : (target.which === 'suggest' ? 'your last Surprise me! workout' : 'your last created workout');
+    const now = intensityOf(intensityStep(key)).name;
+    const to = intensityOf(advice.to).name;
+    return `
+      <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="adv-title">
+        <h2 id="adv-title">${advice.to > intensityStep(key) ? 'Ready for more?' : 'Take it easier?'}</h2>
+        <p>Last time (${fmtDate(f.at)}) you rated ${esc(name)} <b>${f.feel}/5 · ${esc(feelingOf(f.feel).name)}</b> at ${esc(now)}.</p>
+        <p class="muted small">${esc(intensityOf(advice.to).blurb)}</p>
+        <div class="row gap">
+          <button class="btn primary grow" data-action="start-advice" data-accept="1">Try ${esc(to)}</button>
+          <button class="btn secondary grow" data-action="start-advice" data-accept="0">Keep ${esc(now)}</button>
+        </div>
       </div>`;
   }
   if (ui.restEndsAt) {
@@ -890,12 +931,33 @@ setInterval(tick, 250);
 
 // ---------- actions ----------
 
-function beginRoutine(base, step = 0) {
+const keyOf = (target) => (target.type === 'rt' ? target.id : target.which);
+
+function startTarget(target) {
+  const key = keyOf(target);
+  if (target.type === 'rt') {
+    const base = state.custom.find((w) => w.id === target.id) ?? routineById[target.id];
+    beginRoutine(prepared(base, key), intensityStep(key), key);
+  } else {
+    beginRoutine(target.which === 'suggest' ? suggestedWorkout() : createdWorkout(), intensityStep(key), key);
+  }
+}
+
+// If the last rating suggests a change of intensity, ask first; the user decides.
+function askThenStart(target) {
+  const key = keyOf(target);
+  const advice = intensityAdvice(state.feelings[key], intensityStep(key));
+  if (!advice) return startTarget(target);
+  ui.pendingStart = { target, advice };
+  render();
+}
+
+function beginRoutine(base, step = 0, key = base.id) {
   const routine = step ? { ...base, name: `${base.name} · ${intensityOf(step).name}` } : base;
   unlockAudio();
   ui.returnTab = ui.tab === 'train' ? ui.returnTab : ui.tab;
   ui.tab = 'train';
-  update(() => (state.activeRoutine = startRoutine(routine, Date.now(), step)));
+  update(() => (state.activeRoutine = startRoutine(routine, Date.now(), step, key)));
   window.scrollTo(0, 0);
 }
 
@@ -907,11 +969,19 @@ function resetBlockTimer(a) {
 }
 
 const actions = {
-  'rt-begin': (d) => {
-    const base = state.custom.find((w) => w.id === d.id) ?? routineById[d.id];
-    beginRoutine(prepared(base, base.id), intensityStep(base.id));
+  'rt-begin': (d) => askThenStart({ type: 'rt', id: d.id }),
+  'gen-start': (d) => askThenStart({ type: 'gen', which: d.which }),
+  'start-advice': (d) => {
+    const { target, advice } = ui.pendingStart;
+    ui.pendingStart = null;
+    if (d.accept === '1') state.intensity[keyOf(target)] = advice.to;
+    startTarget(target);
   },
-  'gen-start': (d) => beginRoutine(d.which === 'suggest' ? suggestedWorkout() : createdWorkout(), intensityStep(d.which)),
+  rate: (d) => {
+    rateSession(state, ui.summary.session.startedAt, Number(d.v));
+    save();
+    render();
+  },
   intensity: (d) => update(() => {
     state.intensity[d.key] = clamp(intensityStep(d.key) + Number(d.d), INTENSITY_RANGE.min, INTENSITY_RANGE.max);
   }),

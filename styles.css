@@ -199,6 +199,15 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 .intensity .stepper button { width: 44px; height: 44px; font-size: 1.2rem; background: var(--surface); }
 .intensity .stepper button:disabled { opacity: .35; cursor: default; }
 
+/* how it felt */
+.rate { margin-top: 16px; }
+.rate-buttons { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+.rate-buttons .btn { flex-direction: column; gap: 2px; padding: 8px 2px; min-height: 64px; }
+.rate-buttons .btn b { font-size: 1.3rem; }
+.rate-buttons .btn small { font-size: .65rem; font-weight: 600; color: var(--muted); line-height: 1.1; text-align: center; }
+.rated { margin-top: 16px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--good) 14%, var(--surface)); }
+.last-feel { margin: 4px 0 0; color: var(--accent); }
+
 /* my workouts */
 .card.up-next { border-color: var(--accent); }
 .preview { margin-top: 10px; }
@@ -252,8 +261,8 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 .ladder button:focus-visible { outline: 2px solid var(--accent); }
 
 /* history */
-.session .detail { list-style: none; padding: 0; margin: 12px 0 4px; border-top: 1px solid var(--border); }
-.session .detail li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .92rem; }
+.detail { list-style: none; padding: 0; margin: 12px 0 4px; border-top: 1px solid var(--border); }
+.detail li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .92rem; }
 .empty-state { text-align: center; padding: 48px 0; display: grid; gap: 16px; justify-items: center; }
 
 /* settings */

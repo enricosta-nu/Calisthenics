@@ -1,5 +1,5 @@
 // Offline support: cache the app shell, serve cache-first, refresh in the background.
-const CACHE = 'calisthenics-v6';
+const CACHE = 'calisthenics-v7';
 const ASSETS = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/logic.js', 'js/data.js', 'js/routines.js', 'js/exercises.js', 'js/generator.js', 'js/options.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {

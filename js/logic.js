@@ -18,6 +18,7 @@ export function defaultState() {
     custom: [], // workouts saved from Create
     overrides: {}, // { routineId: { blockIndex: { work, rest, ... } } } timing edits
     intensity: {}, // { routineId | 'suggest' | 'create': step } see INTENSITY
+    feelings: {}, // { same keys: { feel: 1–5, intensity, at } } the latest rating
     builder: copyBuilder(DEFAULT_BUILDER),
     profile: { ...DEFAULT_PROFILE, equipment: [...DEFAULT_PROFILE.equipment] }, // level + equipment for Suggest / Create
     settings: { rest: 90, sound: true, suggestMinutes: 60 },
@@ -42,6 +43,7 @@ export function normalizeState(raw) {
     custom: Array.isArray(raw.custom) ? raw.custom.filter(isWorkout) : [],
     overrides: raw.overrides && typeof raw.overrides === 'object' && !Array.isArray(raw.overrides) ? raw.overrides : {},
     intensity: normalizeIntensity(raw.intensity),
+    feelings: normalizeFeelings(raw.feelings),
     builder: normalizeBuilder(raw.builder),
     profile: normalizeProfile(raw.profile),
     settings: {
@@ -50,6 +52,12 @@ export function normalizeState(raw) {
       suggestMinutes: SUGGEST_MINUTES.includes(raw.settings?.suggestMinutes) ? raw.settings.suggestMinutes : base.settings.suggestMinutes,
     },
   };
+}
+
+function normalizeFeelings(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
+  return Object.fromEntries(Object.entries(map).filter(([, f]) =>
+    f && Number.isInteger(f.feel) && f.feel >= 1 && f.feel <= 5 && Number.isInteger(f.intensity) && typeof f.at === 'number'));
 }
 
 function normalizeIntensity(map) {
@@ -434,6 +442,39 @@ export function intensify(block, step) {
   }
 }
 
+// ---------- how it felt ----------
+// The user rates each workout; next time the app offers (never forces) a change of intensity.
+
+export const FEELINGS = [
+  { value: 1, name: 'Very easy' },
+  { value: 2, name: 'Easy' },
+  { value: 3, name: 'Just right' },
+  { value: 4, name: 'Hard' },
+  { value: 5, name: 'Very hard' },
+];
+export const feelingOf = (value) => FEELINGS.find((f) => f.value === value);
+
+// What to offer before starting a workout again, given how it felt last time.
+// Rated 1–3 → one level harder; 4 → nothing; 5 → one level easier. Nothing either if the
+// intensity has changed since that rating (the user already decided).
+export function intensityAdvice(feeling, currentStep) {
+  if (!feeling || feeling.intensity !== currentStep) return null;
+  if (feeling.feel <= 3 && currentStep < INTENSITY_RANGE.max) return { to: currentStep + 1 };
+  if (feeling.feel === 5 && currentStep > INTENSITY_RANGE.min) return { to: currentStep - 1 };
+  return null;
+}
+
+// Record a rating on the session and as the latest feeling for that workout.
+export function rateSession(state, startedAt, feel) {
+  const session = state.sessions.find((x) => x.startedAt === startedAt);
+  if (!session || !feelingOf(feel)) return state;
+  session.feel = feel;
+  if (session.key) {
+    state.feelings[session.key] = { feel, intensity: session.intensity ?? 0, at: session.endedAt };
+  }
+  return state;
+}
+
 export function applyIntensity(routine, step) {
   return step ? { ...routine, blocks: routine.blocks.map((b) => intensify(b, step)) } : routine;
 }
@@ -468,9 +509,12 @@ export function applyOverrides(routine, overrides = {}) {
   return { ...routine, blocks: routine.blocks.map((b, i) => ({ ...b, ...(overrides[i] ?? {}) })) };
 }
 
-export function startRoutine(routine, now = Date.now(), intensity = 0) {
+// `key` is what ratings and intensity are remembered under: the routine id, or 'suggest' /
+// 'create' for generated workouts (new every time, so the section is what's remembered).
+export function startRoutine(routine, now = Date.now(), intensity = 0, key = routine.id) {
   return {
     id: routine.id,
+    key,
     name: routine.name,
     intensity,
     routine: JSON.parse(JSON.stringify({ id: routine.id, name: routine.name, blocks: routine.blocks })),
@@ -506,6 +550,7 @@ export function finishRoutine(state, now = Date.now()) {
     routine: a.id,
     name: a.name,
     ...(a.intensity ? { intensity: a.intensity } : {}),
+    ...(a.key ? { key: a.key } : {}),
     startedAt: a.startedAt,
     endedAt: now,
     exercises: [],

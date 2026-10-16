@@ -198,3 +198,28 @@ test('intensity is stored per workout and kept within range', () => {
   const state = { ...defaultState(), activeRoutine: { ...a, results: a.results.map(() => ({ status: 'done', rounds: 0 })) } };
   assert.equal(finishRoutine(state, 1000).session.intensity, 2);
 });
+
+test('how it felt: the rating is remembered per workout and only ever offers a change', async () => {
+  const { intensityAdvice, rateSession } = await import('../js/logic.js');
+  const at = (feel, intensity) => ({ feel, intensity, at: 1 });
+  assert.deepEqual(intensityAdvice(at(1, 0), 0), { to: 1 });
+  assert.deepEqual(intensityAdvice(at(3, 0), 0), { to: 1 }); // just right → offer harder
+  assert.equal(intensityAdvice(at(4, 0), 0), null); // hard → keep, no question
+  assert.deepEqual(intensityAdvice(at(5, 1), 1), { to: 0 }); // very hard → offer easier
+  assert.equal(intensityAdvice(at(2, 0), 1), null); // already changed since then
+  assert.equal(intensityAdvice(at(2, 3), 3), null); // already at the top
+  assert.equal(intensityAdvice(at(5, -1), -1), null); // already at the bottom
+  assert.equal(intensityAdvice(undefined, 0), null);
+
+  const rt = routineById.a3;
+  let state = { ...defaultState(), activeRoutine: startRoutine(rt, 100, 1, 'a3') };
+  state.activeRoutine.results[0].status = 'done';
+  state = finishRoutine(state, 5000).state;
+  rateSession(state, 100, 3);
+  assert.equal(state.sessions[0].feel, 3);
+  assert.deepEqual(state.feelings.a3, { feel: 3, intensity: 1, at: 5000 });
+  rateSession(state, 100, 9); // not a valid rating
+  assert.equal(state.sessions[0].feel, 3);
+  assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))).feelings, state.feelings);
+  assert.deepEqual(normalizeState({ feelings: { x: { feel: 7, intensity: 0, at: 1 }, y: 'no' } }).feelings, {});
+});
