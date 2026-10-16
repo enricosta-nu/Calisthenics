@@ -22,6 +22,8 @@ export function defaultState() {
     // ticked and sets both in the welcome; saved data without a profile gets DEFAULT_PROFILE.
     profile: { level: 1, equipment: [] },
     today: null, // { date: 'YYYY-MM-DD', equipment: [...] } equipment for today only
+    groupFeelings: {}, // { muscleGroup: [{ v: 1 easy | 2 ok | 3 hard, level, session }] } latest first, see rateGroup
+    lastBackup: null, // { at, sessions } when the last backup was made, and how many workouts it had
     settings: { sound: true, suggestMinutes: 60 },
   };
 }
@@ -43,6 +45,9 @@ export function normalizeState(raw) {
     feelings: normalizeFeelings(raw.feelings),
     builder: normalizeBuilder(raw.builder),
     profile: normalizeProfile(raw.profile),
+    groupFeelings: normalizeGroupFeelings(raw.groupFeelings),
+    lastBackup: raw.lastBackup && typeof raw.lastBackup.at === 'number' && Number.isInteger(raw.lastBackup.sessions)
+      ? { at: raw.lastBackup.at, sessions: raw.lastBackup.sessions } : null,
     today: raw.today && typeof raw.today.date === 'string' && Array.isArray(raw.today.equipment)
       ? { date: raw.today.date, equipment: raw.today.equipment.filter((k) => EQUIPMENT.some((e) => e.id === k)) }
       : null,
@@ -66,13 +71,26 @@ function normalizeIntensity(map) {
     .map(([k, v]) => [k, clamp(v, INTENSITY_RANGE.min, INTENSITY_RANGE.max)]));
 }
 
+const isLevel = (v) => LEVELS.some((l) => l.id === v);
+const MUSCLE_GROUP_IDS = FOCUS.filter((f) => f.id !== 'balanced').map((f) => f.id);
+
 function normalizeProfile(p) {
   const d = DEFAULT_PROFILE;
   if (!p || typeof p !== 'object') return { ...d, equipment: [...d.equipment] };
+  const groupLevels = Object.fromEntries(Object.entries(p.groupLevels ?? {})
+    .filter(([mg, v]) => MUSCLE_GROUP_IDS.includes(mg) && isLevel(v)));
   return {
-    level: LEVELS.some((l) => l.id === p.level) ? p.level : d.level,
+    level: isLevel(p.level) ? p.level : d.level,
     equipment: Array.isArray(p.equipment) ? p.equipment.filter((k) => EQUIPMENT.some((e) => e.id === k)) : [...d.equipment],
+    ...(Object.keys(groupLevels).length ? { groupLevels } : {}),
   };
+}
+
+function normalizeGroupFeelings(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
+  return Object.fromEntries(Object.entries(map)
+    .filter(([mg, list]) => MUSCLE_GROUP_IDS.includes(mg) && Array.isArray(list))
+    .map(([mg, list]) => [mg, list.filter((r) => r && [1, 2, 3].includes(r.v) && isLevel(r.level) && typeof r.session === 'number').slice(0, 4)]));
 }
 
 const copyBuilder = (b) => ({ ...b, skillKinds: [...b.skillKinds], finishers: [...b.finishers] });
@@ -535,4 +553,73 @@ export function dayKey(ts = Date.now()) {
 export function effectiveProfile(state, now = Date.now()) {
   const today = state.today?.date === dayKey(now) ? state.today : null;
   return today ? { ...state.profile, equipment: today.equipment } : state.profile;
+}
+
+// ---------- levels per muscle group ----------
+// The profile has one overall level; a muscle group can have its own (groupLevels), set when the
+// user accepts a level change after rating that group.
+
+export function levelFor(profile, mg) {
+  return profile.groupLevels?.[mg] ?? profile.level;
+}
+
+export const GROUP_FEELINGS = [
+  { v: 1, name: 'Easy', icon: '😌' },
+  { v: 2, name: 'OK', icon: '👍' },
+  { v: 3, name: 'Hard', icon: '🥵' },
+];
+
+// Muscle groups trained in a workout (blocks not skipped), most worked first.
+export function trainedGroups(session) {
+  const count = {};
+  for (const b of session.blocks ?? []) {
+    if (!b.ex || b.result === 'skipped') continue;
+    for (const id of b.ex) {
+      const mg = EXERCISES[id]?.mg;
+      if (mg) count[mg] = (count[mg] ?? 0) + 1;
+    }
+  }
+  return Object.keys(count).sort((a, b) => count[b] - count[a]);
+}
+
+// Record how one muscle group felt in a workout (changing it again replaces the earlier answer).
+export function rateGroup(state, startedAt, mg, v) {
+  const session = state.sessions.find((x) => x.startedAt === startedAt);
+  if (!session || ![1, 2, 3].includes(v)) return state;
+  session.groupFeel = { ...session.groupFeel, [mg]: v };
+  const level = levelFor(state.profile, mg);
+  const list = (state.groupFeelings[mg] ?? []).filter((r) => r.session !== startedAt);
+  state.groupFeelings[mg] = [{ v, level, session: startedAt }, ...list].slice(0, 4);
+  return state;
+}
+
+// Two "easy" in a row at the current level → offer the next level; two "hard" → offer one down.
+export function groupAdvice(state, mg) {
+  const level = levelFor(state.profile, mg);
+  const [a, b] = state.groupFeelings[mg] ?? [];
+  if (!a || !b || a.level !== level || b.level !== level) return null;
+  if (a.v === 1 && b.v === 1 && level < 3) return { mg, to: level + 1 };
+  if (a.v === 3 && b.v === 3 && level > 1) return { mg, to: level - 1 };
+  return null;
+}
+
+// The user's answer: either way the streak starts over, so the question isn't asked again at once.
+export function answerGroupAdvice(state, mg, accept) {
+  const advice = groupAdvice(state, mg);
+  if (advice && accept) {
+    const groupLevels = { ...state.profile.groupLevels, [mg]: advice.to };
+    if (advice.to === state.profile.level) delete groupLevels[mg];
+    state.profile = { ...state.profile, groupLevels };
+  }
+  state.groupFeelings[mg] = [];
+  return state;
+}
+
+// ---------- backup ----------
+
+export const BACKUP_EVERY = 5;
+
+// Workouts finished since the last backup; a reminder shows once it reaches BACKUP_EVERY.
+export function workoutsSinceBackup(state) {
+  return state.sessions.length - (state.lastBackup?.sessions ?? 0);
 }

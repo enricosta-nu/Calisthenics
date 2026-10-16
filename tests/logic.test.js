@@ -78,3 +78,62 @@ test("today's equipment applies only on the day it was set", async () => {
   assert.deepEqual(effectiveProfile({ ...state, today: null }, now).equipment, ['bar', 'dip']);
   assert.equal(normalizeState({ today: { date: '2026-10-16', equipment: ['bar', 'jetpack'] } }).today.equipment.join(), 'bar');
 });
+
+test('per-group levels: rating a group easy twice offers the next level; the user decides', async () => {
+  const { levelFor, trainedGroups, rateGroup, groupAdvice, answerGroupAdvice, workoutsSinceBackup } = await import('../js/logic.js');
+  const sess = (t) => ({ kind: 'routine', startedAt: t, endedAt: t + 1, blocks: [
+    { ex: ['pull-up', 'chin-up', 'push-up'], result: 'done' }, { ex: ['plank'], result: 'skipped' }, { ex: ['jumping-jacks'], result: 'done' },
+  ] });
+  const state = { ...defaultState(), profile: { level: 2, equipment: [] }, sessions: [sess(1), sess(2), sess(3)] };
+  assert.deepEqual(trainedGroups(state.sessions[0]), ['back', 'chest']); // skipped and warm-up don't count
+
+  rateGroup(state, 1, 'back', 1);
+  assert.equal(groupAdvice(state, 'back'), null); // once isn't enough
+  rateGroup(state, 2, 'back', 1);
+  assert.deepEqual(groupAdvice(state, 'back'), { mg: 'back', to: 3 });
+  rateGroup(state, 2, 'back', 2); // changed their mind on that workout
+  assert.equal(groupAdvice(state, 'back'), null);
+  rateGroup(state, 2, 'back', 1);
+  answerGroupAdvice(state, 'back', false); // "not yet": streak starts over, level unchanged
+  assert.equal(levelFor(state.profile, 'back'), 2);
+  assert.equal(groupAdvice(state, 'back'), null);
+
+  rateGroup(state, 3, 'back', 1);
+  rateGroup(state, 1, 'back', 1);
+  answerGroupAdvice(state, 'back', true);
+  assert.equal(levelFor(state.profile, 'back'), 3);
+  assert.equal(levelFor(state.profile, 'chest'), 2); // other groups keep the overall level
+  assert.equal(state.sessions[2].groupFeel.back, 1);
+
+  // hard twice → one level down; never below 1 or above 3
+  state.groupFeelings.chest = [{ v: 3, level: 2, session: 3 }, { v: 3, level: 2, session: 2 }];
+  assert.deepEqual(groupAdvice(state, 'chest'), { mg: 'chest', to: 1 });
+  state.groupFeelings.back = [{ v: 1, level: 3, session: 3 }, { v: 1, level: 3, session: 2 }];
+  assert.equal(groupAdvice(state, 'back'), null);
+  // ratings made at an older level don't count
+  state.groupFeelings.core = [{ v: 1, level: 1, session: 3 }, { v: 1, level: 1, session: 2 }];
+  assert.equal(groupAdvice(state, 'core'), null);
+
+  // stored levels and ratings survive a reload, bad ones are dropped
+  const reloaded = normalizeState(JSON.parse(JSON.stringify({ ...state, profile: { ...state.profile, groupLevels: { back: 3, wings: 2, legs: 7 } } })));
+  assert.deepEqual(reloaded.profile.groupLevels, { back: 3 });
+
+  // backup reminder counter
+  assert.equal(workoutsSinceBackup(state), 3);
+  assert.equal(workoutsSinceBackup({ ...state, lastBackup: { at: 1, sessions: 2 } }), 1);
+});
+
+test('the generator uses the level of each muscle group', async () => {
+  const { generateWorkout, suggestPlan, rng, usable } = await import('../js/generator.js');
+  const { EXERCISES } = await import('../js/exercises.js');
+  const profile = { level: 1, equipment: ['bar', 'lowbar', 'dip', 'parallettes'], groupLevels: { back: 3 } };
+  assert.equal(usable(EXERCISES['archer-pull-up'], profile), true); // back at 3
+  assert.equal(usable(EXERCISES['archer-push-up'], profile), false); // chest still 1
+  for (const seed of [1, 2, 3, 4, 5]) {
+    const w = generateWorkout({ minutes: 60, plan: suggestPlan(60, rng(seed)), seed, profile });
+    for (const it of w.blocks.flatMap((b) => b.items)) {
+      const e = EXERCISES[it.ex];
+      if (e.mg && e.mg !== 'back') assert.ok(e.level <= 1, `${it.ex} above level 1`);
+    }
+  }
+});

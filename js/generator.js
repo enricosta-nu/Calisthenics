@@ -2,7 +2,7 @@
 // Pure and seeded, so the same options + seed always give the same workout.
 import { EXERCISES } from './exercises.js';
 import { interval, tabata, amrap, emom, circuit } from './routines.js';
-import { blockDuration, clamp, exercisesClash } from './logic.js';
+import { blockDuration, clamp, exercisesClash, levelFor } from './logic.js';
 import { FOCUS, DEFAULT_PROFILE, moduleById } from './options.js';
 
 export { MODULES, PARTS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES } from './options.js';
@@ -176,13 +176,16 @@ export function usable(e, profile) {
   if (!e.mg) return false;
   const has = (k) => profile.equipment.includes(k);
   if (e.needs.length && !e.needs.some(has)) return false;
-  return e.level <= profile.level || (bandHelps(e, profile) && e.level === profile.level + 1);
+  const level = levelFor(profile, e.mg);
+  return e.level <= level || (bandHelps(e, profile) && e.level === level + 1);
 }
 
-const bandHelps = (e, profile) => e.band && profile.level === 1 && profile.equipment.includes('band');
+// Levels are per muscle group (levelFor): a beginner at back but not at chest gets band help only for back.
+const bandHelps = (e, profile) => e.band && levelFor(profile, e.mg) === 1 && profile.equipment.includes('band');
 
 // The level an exercise effectively has for this user (band-assisted counts as their level).
-const effectiveLevel = (e, profile) => (e.level > profile.level ? profile.level : e.level);
+const effectiveLevel = (e, profile) => Math.min(e.level, levelFor(profile, e.mg));
+const aboveLevel = (e, profile) => e.level > levelFor(profile, e.mg);
 
 // `neighbours` are the exercises this one will sit next to; a clash with them (see
 // exercisesClash) is only accepted when nothing else is left.
@@ -208,9 +211,9 @@ function pickExercise(group, types, ctx, exclude, avoid = new Set(), neighbours 
   }
   // Favour exercises at the user's level, in the focus muscle group, and not used yet today.
   const weights = pool.map(([id, e]) => {
-    const gap = profile.level - effectiveLevel(e, profile);
+    const gap = levelFor(profile, e.mg) - effectiveLevel(e, profile);
     // Band-assisted moves are a stopgap: used when needed, but not preferred over unassisted ones.
-    const levelWeight = e.level > profile.level ? 1.5 : gap === 0 ? 3 : gap === 1 ? 1.5 : 0.6;
+    const levelWeight = aboveLevel(e, profile) ? 1.5 : gap === 0 ? 3 : gap === 1 ? 1.5 : 0.6;
     const focusWeight = ctx.focus !== 'balanced' && e.mg === ctx.focus ? 6 : 1;
     return (levelWeight * focusWeight * freshness(id, e, ctx)) / (1 + 3 * (ctx.used[id] ?? 0));
   });
@@ -250,7 +253,7 @@ function pickExercises(k, types, ctx) {
 function asItem(id, ctx) {
   const e = EXERCISES[id];
   if (!bandHelps(e, ctx.profile)) return { ex: id };
-  return { ex: id, note: e.level > ctx.profile.level ? 'with resistance band' : 'band if needed' };
+  return { ex: id, note: aboveLevel(e, ctx.profile) ? 'with resistance band' : 'band if needed' };
 }
 
 // A prescribed amount for self-paced blocks: reps for dynamic moves, seconds for holds.
@@ -270,8 +273,8 @@ function pickMuscle(mg, types, ctx, exclude, neighbours = [], extra = () => true
   let id;
   if (pool.length) {
     const weights = pool.map(([pid, e]) => {
-      const gap = ctx.profile.level - effectiveLevel(e, ctx.profile);
-      const levelWeight = e.level > ctx.profile.level ? 1.5 : gap === 0 ? 3 : gap === 1 ? 1.5 : 0.6;
+      const gap = levelFor(ctx.profile, e.mg) - effectiveLevel(e, ctx.profile);
+      const levelWeight = aboveLevel(e, ctx.profile) ? 1.5 : gap === 0 ? 3 : gap === 1 ? 1.5 : 0.6;
       return (levelWeight * freshness(pid, e, ctx)) / (1 + 3 * (ctx.used[pid] ?? 0));
     });
     let r = ctx.rand() * weights.reduce((x, y) => x + y, 0);
@@ -488,7 +491,7 @@ export function swapCandidates(block, index, profile) {
       && !neighbours.some((n) => exercisesClash(n, id)))
     .map(([id]) => id);
   if (!ids.includes(current)) ids.push(current);
-  const gap = (id) => Math.abs(profile.level - effectiveLevel(EXERCISES[id], profile));
+  const gap = (id) => Math.abs(levelFor(profile, EXERCISES[id].mg) - effectiveLevel(EXERCISES[id], profile));
   return ids.sort((x, y) => gap(x) - gap(y) || EXERCISES[x].name.localeCompare(EXERCISES[y].name));
 }
 
@@ -506,7 +509,7 @@ export function swapItem(block, index, id, profile) {
   const before = EXERCISES[old.ex];
   const e = EXERCISES[id];
   const item = { ex: id };
-  if (bandHelps(e, profile)) item.note = e.level > profile.level ? 'with resistance band' : 'band if needed';
+  if (bandHelps(e, profile)) item.note = aboveLevel(e, profile) ? 'with resistance band' : 'band if needed';
   if (old.reps != null || old.secs != null || old.text) {
     if (e.t === 'hold') item.secs = old.secs ?? e.secs;
     else item.reps = old.reps != null && before.reps ? Math.max(2, Math.round((old.reps / before.reps) * e.reps)) : e.reps;

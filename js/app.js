@@ -11,6 +11,7 @@ import {
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
   INTENSITY_RANGE, intensityOf, applyIntensity, intensify, FEELINGS, feelingOf, intensityAdvice, rateSession,
   trainingHistory, dayKey, effectiveProfile,
+  levelFor, GROUP_FEELINGS, trainedGroups, rateGroup, groupAdvice, answerGroupAdvice, BACKUP_EVERY, workoutsSinceBackup,
 } from './logic.js';
 
 // ---------- state ----------
@@ -144,8 +145,12 @@ function render() {
     ? '<button class="banner" data-action="tab" data-tab="train"><span>▶ Workout in progress</span><b>Resume</b></button>'
     : '';
   $('#view').innerHTML = banner + view();
-  $('#overlay').innerHTML = renderOverlay();
-  $('#overlay').hidden = !$('#overlay').innerHTML;
+  // Slide the sheet in only when it opens, not on every redraw while it's open.
+  const overlay = $('#overlay');
+  const wasOpen = !overlay.hidden;
+  overlay.innerHTML = renderOverlay();
+  overlay.hidden = !overlay.innerHTML;
+  overlay.toggleAttribute('data-enter', !overlay.hidden && !wasOpen);
   tick();
   syncWakeLock();
 }
@@ -168,6 +173,12 @@ function chips(action, options, isOn, label) {
 const minutesOptions = (list) => list.map((m) => ({ id: m, name: `${m} min` }));
 
 // Level and equipment: one line with a Change button, opening the chips in place.
+// e.g. " (Back: Advanced, Legs: Beginner)" when some groups differ from the overall level.
+function groupLevelsText(p) {
+  const own = Object.entries(p.groupLevels ?? {});
+  return own.length ? ` <span class="muted">(${esc(own.map(([mg, lv]) => `${groupName(mg)}: ${levelName(lv)}`).join(', '))})</span>` : '';
+}
+
 function profileCard() {
   const p = state.profile;
   const level = LEVELS.find((l) => l.id === p.level);
@@ -175,7 +186,7 @@ function profileCard() {
   if (!ui.profileOpen) {
     return `
       <div class="profile-line row between">
-        <span><b>${esc(level.name)}</b> · ${esc(kit.length ? kit.join(', ') : 'No equipment')}</span>
+        <span><b>${esc(level.name)}</b>${groupLevelsText(p)} · ${esc(kit.length ? kit.join(', ') : 'No equipment')}</span>
         <button class="btn text" data-action="pf-toggle">Change</button>
       </div>
       ${todayLine()}`;
@@ -185,6 +196,21 @@ function profileCard() {
       <div class="row between"><h3>Your level</h3><button class="btn text" data-action="pf-toggle">Done</button></div>
       ${chips('pf-level', LEVELS, (id) => id === p.level, 'Level')}
       <p class="muted small">${esc(level.blurb)}</p>
+      <details class="group-levels" ${p.groupLevels ? 'open' : ''}>
+        <summary>Level per muscle group</summary>
+        ${FOCUS.filter((f) => f.id !== 'balanced').map((g) => {
+          const lv = levelFor(p, g.id);
+          return `
+          <div class="field">
+            <span>${esc(g.name)} <span class="muted small">${p.groupLevels?.[g.id] ? '' : '(same as overall)'}</span></span>
+            <div class="stepper small">
+              <button data-action="pf-group" data-mg="${g.id}" data-d="-1" aria-label="${esc(g.name)} level down" ${lv <= 1 ? 'disabled' : ''}>−</button>
+              <output>${esc(levelName(lv))}</output>
+              <button data-action="pf-group" data-mg="${g.id}" data-d="1" aria-label="${esc(g.name)} level up" ${lv >= 3 ? 'disabled' : ''}>+</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </details>
       <h3>Your equipment</h3>
       ${chips('pf-equip', EQUIPMENT, (id) => p.equipment.includes(id), 'Equipment')}
       <p class="muted small">Floor, a wall and a chair are always assumed. Exercises that need something you don't have are left out.${p.level === 1 && p.equipment.includes('band') ? ' With a band, beginners also get band-assisted pull-ups, chin-ups and dips.' : ''}</p>
@@ -741,27 +767,70 @@ function renderSettings() {
     </article>
     <article class="card">
       <h3>Your data</h3>
-      <p class="muted small">Everything is stored on this device only. Export a backup to move it to another device.</p>
+      <p class="muted small">Everything is stored on this device only. A backup is one small file: save it to iCloud Drive, Google Drive, Dropbox, or send it to yourself. On a new phone, restore it from that file.</p>
+      <p class="small">${state.lastBackup
+        ? `Last backup: <b>${fmtDate(state.lastBackup.at)}</b>${workoutsSinceBackup(state) ? ` · ${workoutsSinceBackup(state)} workout${workoutsSinceBackup(state) === 1 ? '' : 's'} since` : ' · up to date'}`
+        : '<b>Not backed up yet.</b>'}</p>
       <div class="row gap wrap">
-        <button class="btn secondary" data-action="export">Export backup</button>
-        <label class="btn secondary">Import backup<input type="file" accept="application/json,.json" data-action="import" hidden></label>
+        <button class="btn primary" data-action="backup">Back up</button>
+        <label class="btn secondary">Restore<input type="file" accept="application/json,.json" data-action="import" hidden></label>
         <button class="btn text danger" data-action="reset">Reset everything</button>
       </div>
     </article>
     <p class="muted small center">Calisthenics · works offline · add to your home screen to install.</p>`;
 }
 
+const groupName = (mg) => FOCUS.find((f) => f.id === mg)?.name ?? mg;
+const levelName = (lv) => LEVELS.find((l) => l.id === lv).name;
+
 function ratingPanel(session) {
-  if (session.feel) {
-    return `<p class="rated">Thanks! You rated it <b>${session.feel}/5 · ${esc(feelingOf(session.feel).name)}</b>. Next time you start it, you'll be asked whether to change the intensity.</p>`;
-  }
-  return `
-    <div class="rate">
-      <p><b>How did it feel?</b></p>
-      <div class="rate-buttons">
-        ${FEELINGS.map((f) => `<button class="btn secondary" data-action="rate" data-v="${f.value}"><b>${f.value}</b><small>${esc(f.name)}</small></button>`).join('')}
-      </div>
+  const overall = session.feel
+    ? `<p class="rated">You rated it <b>${session.feel}/5 · ${esc(feelingOf(session.feel).name)}</b>. Next time you start it, you'll be asked whether to change the intensity.</p>`
+    : `
+      <div class="rate">
+        <p><b>How did it feel?</b></p>
+        <div class="rate-buttons">
+          ${FEELINGS.map((f) => `<button class="btn secondary" data-action="rate" data-v="${f.value}"><b>${f.value}</b><small>${esc(f.name)}</small></button>`).join('')}
+        </div>
+      </div>`;
+  const groups = trainedGroups(session);
+  if (!groups.length) return overall;
+  return `${overall}
+    <div class="rate-groups">
+      <p><b>And each muscle group?</b> <span class="muted small">optional</span></p>
+      ${groups.map((mg) => groupRow(session, mg)).join('')}
     </div>`;
+}
+
+function groupRow(session, mg) {
+  const chosen = session.groupFeel?.[mg];
+  const advice = chosen ? groupAdvice(state, mg) : null;
+  const answered = ui.groupAnswers?.[mg];
+  const lv = levelFor(state.profile, mg);
+  return `
+    <div class="group-row">
+      <span>${esc(groupName(mg))}</span>
+      <div class="group-buttons">
+        ${GROUP_FEELINGS.map((f) => `<button class="chip ${chosen === f.v ? 'on' : ''}" aria-pressed="${chosen === f.v}" data-action="rate-group" data-mg="${mg}" data-v="${f.v}">${f.icon} ${esc(f.name)}</button>`).join('')}
+      </div>
+    </div>
+    ${answered ? `<p class="group-note">${esc(answered)}</p>` : ''}
+    ${advice ? `
+      <div class="suggest ${advice.to > lv ? 'advance' : ''}">
+        <p>${esc(groupName(mg))} felt ${advice.to > lv ? 'easy' : 'hard'} twice in a row. ${advice.to > lv
+          ? `Include <b>${esc(levelName(advice.to))}</b> ${esc(groupName(mg).toLowerCase())} exercises from now on?`
+          : `Go back to <b>${esc(levelName(advice.to))}</b> ${esc(groupName(mg).toLowerCase())} exercises for a while?`}</p>
+        <div class="row gap">
+          <button class="btn primary" data-action="group-advice" data-mg="${mg}" data-accept="1">Yes</button>
+          <button class="btn secondary" data-action="group-advice" data-mg="${mg}" data-accept="0">Not yet</button>
+        </div>
+      </div>` : ''}`;
+}
+
+function backupReminder() {
+  const n = workoutsSinceBackup(state);
+  if (n < BACKUP_EVERY) return '';
+  return `<div class="suggest"><p>${n} workouts aren't backed up yet.</p><button class="btn secondary" data-action="backup">Back up now</button></div>`;
 }
 
 function renderOverlay() {
@@ -776,6 +845,7 @@ function renderOverlay() {
                <ul class="detail">${session.blocks.map((b) => `<li><span>${esc(b.name ?? b.title)}${b.name ? ` <span class="muted small">${esc(b.title)}</span>` : ''}</span><span class="muted">${esc(b.result)}</span></li>`).join('')}</ul>`
             : `<p class="muted">${formatDuration(session.endedAt - session.startedAt)}</p>`}
         ${session?.kind === 'routine' ? ratingPanel(session) : ''}
+        ${session ? backupReminder() : ''}
         <button class="btn ghost full" data-action="close-summary">${session?.kind === 'routine' && !session.feel ? 'Skip' : 'Done'}</button>
       </div>`;
   }
@@ -912,6 +982,21 @@ const actions = {
     if (d.accept === '1') state.intensity[keyOf(target)] = advice.to;
     startTarget(target);
   },
+  'rate-group': (d) => {
+    rateGroup(state, ui.summary.session.startedAt, d.mg, Number(d.v));
+    if (ui.groupAnswers) delete ui.groupAnswers[d.mg];
+    save();
+    render();
+  },
+  'group-advice': (d) => {
+    const advice = groupAdvice(state, d.mg);
+    answerGroupAdvice(state, d.mg, d.accept === '1');
+    ui.groupAnswers = { ...ui.groupAnswers, [d.mg]: d.accept === '1' && advice
+      ? `✓ ${groupName(d.mg)} is now ${levelName(advice.to)}. You can change it in your profile.`
+      : `OK, ${groupName(d.mg)} stays ${levelName(levelFor(state.profile, d.mg))}.` };
+    save();
+    render();
+  },
   rate: (d) => {
     rateSession(state, ui.summary.session.startedAt, Number(d.v));
     save();
@@ -948,6 +1033,13 @@ const actions = {
   }),
   'today-reset': () => { ui.todayOpen = false; update(() => (state.today = null)); },
   'pf-level': (d) => update(() => (state.profile.level = Number(d.id))),
+  'pf-group': (d) => update(() => {
+    const lv = clamp(levelFor(state.profile, d.mg) + Number(d.d), 1, 3);
+    const groupLevels = { ...state.profile.groupLevels, [d.mg]: lv };
+    if (lv === state.profile.level) delete groupLevels[d.mg];
+    state.profile = { ...state.profile, groupLevels };
+    if (!Object.keys(groupLevels).length) delete state.profile.groupLevels;
+  }),
   'pf-equip': (d) => update(() => {
     const kit = state.profile.equipment;
     state.profile.equipment = kit.includes(d.id) ? kit.filter((k) => k !== d.id) : [...kit, d.id];
@@ -1049,7 +1141,7 @@ const actions = {
     update(() => (state.activeRoutine = null));
   },
   tab: (d) => { ui.tab = d.tab; render(); window.scrollTo(0, 0); },
-  'close-summary': () => { ui.summary = null; render(); },
+  'close-summary': () => { ui.summary = null; ui.groupAnswers = null; render(); },
   toggle: (d) => { ui.openSession = ui.openSession === Number(d.i) ? null : Number(d.i); render(); },
   'delete-session': (d) => {
     if (!confirm('Delete this workout from history?')) return;
@@ -1057,13 +1149,28 @@ const actions = {
     update(() => state.sessions.splice(Number(d.i), 1));
   },
   sound: (d, el) => update(() => (state.settings.sound = el.checked)),
-  export: () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `calisthenics-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  // Share sheet where available (save to Files / iCloud Drive / Drive / Dropbox / a message);
+  // otherwise a download. Only counted as backed up when the user didn't cancel.
+  backup: async () => {
+    const name = `calisthenics-backup-${dayKey()}.json`;
+    const text = JSON.stringify({ ...state, lastBackup: { at: Date.now(), sessions: state.sessions.length } }, null, 2);
+    const file = new File([text], name, { type: 'application/json' });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Calisthenics backup' });
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(file);
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // cancelled in the share sheet
+      return toast('The backup could not be saved.');
+    }
+    update(() => (state.lastBackup = { at: Date.now(), sessions: state.sessions.length }));
+    toast('Backup saved.');
   },
   import: async (d, el) => {
     const file = el.files?.[0];
