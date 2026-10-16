@@ -1,4 +1,3 @@
-import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { ROUTINES, EXERCISES, routineById } from './routines.js';
 import {
   generateWorkout, suggestPlan, createPlan, workoutDuration, rng, partOf, nextSwap, swapItem,
@@ -7,8 +6,7 @@ import {
   MODULES, PARTS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, SKILL_BLOCKS, MAX_FINISHERS, LEVELS, EQUIPMENT,
 } from './options.js';
 import {
-  STORAGE_KEY, defaultState, normalizeState, buildWorkout, finishWorkout, evaluate,
-  sessionTotals, stats, trackHistory, lastPerformance, stepFor, formatDuration, formatClock, clamp,
+  STORAGE_KEY, defaultState, normalizeState, stats, formatDuration, formatClock, clamp, exerciseLog, muscleLoad,
   blockPhases, blockDuration, blockTitle, blockName, phaseAt, startRoutine, routineElapsed, finishRoutine,
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
   INTENSITY_RANGE, intensityOf, applyIntensity, intensify, FEELINGS, feelingOf, intensityAdvice, rateSession,
@@ -24,10 +22,7 @@ const ui = {
   seeds: { suggest: newSeed(), create: newSeed() }, // Shuffle picks a new seed
   swaps: {}, // { suggest | create: { sig, map: { 'block:item': exerciseId } } } swapped exercises in previews
   openItem: null, // 'scope:block:item' whose details stay open after a swap
-  pending: null, // value in the set stepper
-  holdStartedAt: null, // stopwatch for hold exercises
-  restEndsAt: null,
-  summary: null, // { session, suggestions } shown after finishing
+  summary: null, // { session } shown after finishing
   openSession: null,
   phaseKey: null, // "block:phase" of the routine timer, to detect phase changes
   lastCount: null, // last 3-2-1 countdown second that beeped
@@ -63,8 +58,6 @@ function update(fn) {
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const unit = (type) => (type === 'hold' ? 's' : '');
-const range = (ex) => `${ex.sets} × ${ex.min}–${ex.max}${ex.type === 'hold' ? ' s' : ' reps'}`;
 const fmtDate = (ts) => new Date(ts).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
 function toast(msg) {
@@ -115,12 +108,10 @@ function play(name) {
   }
 }
 
-const beep = () => play('done');
-
 let wakeLock = null;
 async function syncWakeLock() {
   try {
-    const training = state.active || state.activeRoutine;
+    const training = state.activeRoutine;
     if (training && !wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible') {
       wakeLock = await navigator.wakeLock.request('screen');
       wakeLock.addEventListener('release', () => (wakeLock = null));
@@ -132,27 +123,22 @@ async function syncWakeLock() {
   }
 }
 
-function currentExercise() {
-  const w = state.active;
-  return w ? w.exercises[w.current] : null;
-}
-
-function defaultPending(ex) {
-  if (!ex) return 0;
-  if (ex.done.length) return ex.done[ex.done.length - 1];
-  const last = lastPerformance(state.sessions, ex.track, ex.level);
-  return last?.[0] ?? ex.min;
-}
-
 // ---------- views ----------
 
 function render() {
-  const training = state.active || state.activeRoutine;
+  if (!state.onboarded) {
+    document.querySelector('nav').hidden = true;
+    $('#view').innerHTML = renderWelcome();
+    $('#overlay').hidden = true;
+    return;
+  }
+  document.querySelector('nav').hidden = false;
+  const training = state.activeRoutine;
   if (ui.tab === 'train' && !training) ui.tab = ui.returnTab;
   const navTab = ui.tab === 'train' ? ui.returnTab : ui.tab;
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === navTab));
   const view = {
-    train: renderTrain, suggest: renderSuggest, create: renderCreate, skills: renderSkills, history: renderHistory, settings: renderSettings,
+    train: renderRoutine, suggest: renderSuggest, create: renderCreate, progress: renderProgress, history: renderHistory, settings: renderSettings,
   }[ui.tab];
   const banner = training && ui.tab !== 'train'
     ? '<button class="banner" data-action="tab" data-tab="train"><span>▶ Workout in progress</span><b>Resume</b></button>'
@@ -162,10 +148,6 @@ function render() {
   $('#overlay').hidden = !$('#overlay').innerHTML;
   tick();
   syncWakeLock();
-}
-
-function renderTrain() {
-  return state.activeRoutine ? renderRoutine() : renderWorkout();
 }
 
 function statTiles() {
@@ -409,25 +391,6 @@ function routineCards(list, { upNext = false, deletable = false } = {}) {
   }).join('');
 }
 
-function ladderCards() {
-  return TEMPLATES.map((t) => `
-    <article class="card">
-      <div class="row between">
-        <div>
-          <h3>${esc(t.name)}</h3>
-          <p class="muted">${esc(t.blurb)}</p>
-        </div>
-        <button class="btn primary" data-action="start" data-id="${t.id}">Start</button>
-      </div>
-      <ul class="plan">
-        ${t.tracks.map((id) => {
-          const step = stepFor(id, state.levels[id]);
-          return `<li><span class="tag">${esc(trackById[id].name)}</span>${esc(step.name)} <span class="muted">${range(step)}</span></li>`;
-        }).join('')}
-      </ul>
-    </article>`).join('');
-}
-
 function amountOf(it) {
   if (it.reps != null) return `${it.reps}×`;
   if (it.text) return `${it.text}×`;
@@ -618,141 +581,98 @@ function renderCircuit(a, block) {
     </article>`;
 }
 
-function renderWorkout() {
-  const w = state.active;
-  const ex = currentExercise();
-  const track = trackById[ex.track];
-  const step = stepFor(ex.track, ex.level);
-  const last = lastPerformance(state.sessions, ex.track, ex.level);
-  const complete = ex.done.length >= ex.sets;
-  const isLast = w.current === w.exercises.length - 1;
-  if (ui.pending == null) ui.pending = defaultPending(ex);
+// ---------- progress ----------
 
-  const pills = w.exercises.map((e, i) => `
-    <button class="pill ${i === w.current ? 'active' : ''} ${e.done.length >= e.sets ? 'done' : ''}" data-action="goto" data-i="${i}">
-      ${esc(trackById[e.track].name)} <small>${e.done.length}/${e.sets}</small>
-    </button>`).join('');
+const MUSCLE_GROUPS = FOCUS.filter((f) => f.id !== 'balanced');
+const DAY = 86400000;
 
-  const setChips = Array.from({ length: Math.max(ex.sets, ex.done.length) }, (_, i) => {
-    const v = ex.done[i];
-    const cls = v == null ? 'empty' : v >= ex.max ? 'great' : v >= ex.min ? 'ok' : 'low';
-    return `<span class="set ${cls}">${v == null ? i + 1 : v + unit(ex.type)}</span>`;
-  }).join('');
-
-  const input = ex.type === 'hold'
-    ? `<div class="stopwatch">
-         <button class="btn big ${ui.holdStartedAt ? 'danger' : 'primary'}" data-action="hold">
-           ${ui.holdStartedAt ? 'Stop' : 'Start hold'}
-         </button>
-         <div class="stepper">
-           <button data-action="adj" data-d="-5" aria-label="minus 5 seconds">−5</button>
-           <output data-tick="hold">${ui.pending}s</output>
-           <button data-action="adj" data-d="5" aria-label="plus 5 seconds">+5</button>
-         </div>
-       </div>`
-    : `<div class="stepper">
-         <button data-action="adj" data-d="-1" aria-label="one less rep">−</button>
-         <output>${ui.pending}</output>
-         <button data-action="adj" data-d="1" aria-label="one more rep">+</button>
-       </div>`;
-
-  const verdict = evaluate(ex);
-  const note = complete
-    ? verdict === 'advance'
-      ? `<p class="note good">All sets at the top of the range — you'll be offered the next step when you finish.</p>`
-      : verdict === 'regress'
-        ? `<p class="note warn">Below the target range. Consider an easier step for now.</p>`
-        : `<p class="note">Target done. Extra sets are optional.</p>`
-    : '';
+function renderProgress() {
+  const s = stats(state.sessions);
+  const since = Date.now() - 28 * DAY;
+  const load = muscleLoad(state.sessions, since);
+  const most = Math.max(1, ...Object.values(load));
+  const log = exerciseLog(state.sessions);
+  const basket = Object.entries(EXERCISES).filter(([, e]) => e.mg);
+  const tried = basket.filter(([id]) => log[id]).length;
+  const trained = MUSCLE_GROUPS.filter((g) => load[g.id]);
+  const least = trained.length ? MUSCLE_GROUPS.reduce((a, g) => ((load[g.id] ?? 0) < (load[a.id] ?? 0) ? g : a)) : null;
+  const feelings = Object.entries(state.feelings).sort(([, a], [, b]) => b.at - a.at);
+  const nameOf = (key) => (key === 'suggest' ? 'Surprise me!' : key === 'create' ? 'Create'
+    : (state.custom.find((w) => w.id === key) ?? routineById[key])?.name ?? key);
 
   return `
-    <header class="page-head row between">
-      <div>
-        <h1>${esc(w.name)}</h1>
-        <p class="muted"><span data-tick="elapsed">${formatDuration(Date.now() - w.startedAt)}</span> elapsed</p>
-      </div>
-      <button class="btn ghost" data-action="finish">Finish</button>
-    </header>
-    <div class="pills">${pills}</div>
-    <article class="card exercise">
-      <p class="eyebrow">${esc(track.name)} · step ${ex.level + 1} of ${track.steps.length}</p>
-      <h2>${esc(ex.name)}</h2>
-      <p class="muted">${esc(step.cue)}</p>
-      <p class="target">Target <b>${range(ex)}</b>${last ? ` <span class="muted">· last time ${last.map((n) => n + unit(ex.type)).join(', ')}</span>` : ''}</p>
-      <div class="sets">${setChips}</div>
-      ${note}
-      ${input}
-      <div class="row gap">
-        <button class="btn primary grow" data-action="log">Log set ${ex.done.length + 1}</button>
-        ${ex.done.length ? '<button class="btn ghost" data-action="undo" aria-label="Undo last set">Undo</button>' : ''}
-      </div>
-      ${complete ? `<button class="btn ${isLast ? 'primary' : 'secondary'} full" data-action="${isLast ? 'finish' : 'next'}">${isLast ? 'Finish workout' : 'Next exercise →'}</button>` : ''}
+    <header class="page-head"><h1>Progress</h1></header>
+    <section class="tiles">
+      <div class="tile"><b>${s.total}</b><span>workouts</span></div>
+      <div class="tile"><b>${s.thisWeek}</b><span>this week</span></div>
+      <div class="tile"><b>${s.weekStreak}</b><span>week streak</span></div>
+    </section>
+
+    <h2>Muscle groups · last 4 weeks</h2>
+    <article class="card">
+      ${trained.length ? `
+        <ul class="bars">${MUSCLE_GROUPS.map((g) => `
+          <li><span>${esc(g.name)}</span><span class="bar"><span style="width:${((load[g.id] ?? 0) / most) * 100}%"></span></span><b>${load[g.id] ?? 0}</b></li>`).join('')}
+        </ul>
+        <p class="muted small">Exercises done per group. ${least && (load[least.id] ?? 0) < most / 2 ? `${esc(least.name)} has had the least work: try a ${esc(least.name)} focus in Create.` : 'Nicely balanced.'}</p>`
+      : '<p class="muted">Finish a workout to see how your training spreads across muscle groups.</p>'}
     </article>
-    <div class="row between">
-      <button class="btn text" data-action="rest">Start rest timer</button>
-      <button class="btn text danger" data-action="discard">Discard workout</button>
-    </div>`;
+
+    <h2>Your exercises</h2>
+    <p class="muted small">${tried} of ${basket.length} exercises in the app tried so far.</p>
+    ${MUSCLE_GROUPS.map((g) => {
+      const ids = basket.filter(([, e]) => e.mg === g.id).map(([id]) => id)
+        .sort((a, b) => (log[b]?.count ?? 0) - (log[a]?.count ?? 0) || EXERCISES[a].level - EXERCISES[b].level);
+      const done = ids.filter((id) => log[id]).length;
+      return `
+        <details class="card exercise-group">
+          <summary class="row between"><b>${esc(g.name)}</b><span class="muted small">${done}/${ids.length} tried</span></summary>
+          <ul class="detail">${ids.map((id) => `
+            <li><span>${esc(EXERCISES[id].name)} <span class="muted small">L${EXERCISES[id].level}</span></span>
+              <span class="muted small">${log[id] ? `×${log[id].count} · ${fmtDate(log[id].last)}` : 'not yet'}</span></li>`).join('')}
+          </ul>
+        </details>`;
+    }).join('')}
+
+    <h2>How workouts felt</h2>
+    <article class="card">
+      ${feelings.length ? `<ul class="detail">${feelings.map(([key, f]) => `
+        <li><span>${esc(nameOf(key))} <span class="muted small">${esc(intensityOf(f.intensity).name)}</span></span>
+          <span><b>${f.feel}/5</b> <span class="muted small">${esc(feelingOf(f.feel).name)} · ${fmtDate(f.at)}</span></span></li>`).join('')}
+      </ul>` : '<p class="muted">Rate a workout when you finish it, and your ratings show up here.</p>'}
+    </article>`;
 }
 
-function renderSkills() {
-  const blocks = TRACKS.map((t) => {
-    const level = state.levels[t.id];
-    const hist = trackHistory(state.sessions, t.id);
-    return `
-      <article class="card">
-        <div class="row between">
-          <h3>${esc(t.name)}</h3>
-          <span class="muted small">step ${level + 1}/${t.steps.length}</span>
-        </div>
-        <div class="progress"><span style="width:${((level + 1) / t.steps.length) * 100}%"></span></div>
-        ${hist.length > 1 ? sparkline(hist) : ''}
-        <ol class="ladder">
-          ${t.steps.map((s, i) => `
-            <li class="${i < level ? 'passed' : i === level ? 'current' : ''}">
-              <button data-action="level" data-track="${t.id}" data-level="${i}">
-                <span>${esc(s.name)}</span><small>${range(s)}</small>
-              </button>
-            </li>`).join('')}
-        </ol>
-      </article>`;
-  }).join('');
-  return `
-    <header class="page-head"><h1>Skills</h1></header>
-    <h2>Sets & reps workouts</h2>
-    <p class="muted small">Built from your current step on each ladder. Hit the top of the range on every set and you'll be offered the next step.</p>
-    ${ladderCards()}
-    <h2>Skill ladders</h2>
-    <p class="muted small">Tap any step to set it as your current level.</p>
-    ${blocks}`;
-}
+// ---------- first launch ----------
 
-function sparkline(points) {
-  const w = 300;
-  const h = 56;
-  const pad = 6;
-  const max = Math.max(...points.map((p) => p.best), 1);
-  const x = (i) => pad + (i * (w - 2 * pad)) / (points.length - 1);
-  const y = (v) => h - pad - (v / max) * (h - 2 * pad);
-  const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.best).toFixed(1)}`).join(' ');
-  const lastP = points[points.length - 1];
+function renderWelcome() {
+  const p = state.profile;
   return `
-    <figure class="spark">
-      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Best set over the last ${points.length} sessions">
-        <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-        ${points.map((p, i) => `<circle cx="${x(i)}" cy="${y(p.best)}" r="3" fill="var(--accent)"><title>${esc(p.name)}: ${p.best}${unit(p.type)}</title></circle>`).join('')}
-      </svg>
-      <figcaption class="muted small">Best set, last ${points.length} sessions · latest ${lastP.best}${unit(lastP.type)} (${esc(lastP.name)})</figcaption>
-    </figure>`;
+    <header class="page-head welcome">
+      <p class="eyebrow">Welcome</p>
+      <h1>Let's set up your training</h1>
+      <p class="muted">Two quick questions, so every workout fits you. You can change them any time in Settings.</p>
+    </header>
+    <article class="card">
+      <h3>1 · Your level</h3>
+      ${chips('pf-level', LEVELS, (id) => id === p.level, 'Level')}
+      <p class="muted small">${esc(LEVELS.find((l) => l.id === p.level).blurb)}</p>
+    </article>
+    <article class="card">
+      <h3>2 · Your equipment</h3>
+      ${chips('pf-equip', EQUIPMENT, (id) => p.equipment.includes(id), 'Equipment')}
+      <p class="muted small">Floor, a wall and a chair are always assumed. Pick everything you can use.</p>
+    </article>
+    <button class="btn primary big full" data-action="welcome-done">Let's go</button>`;
 }
 
 function renderHistory() {
   const s = stats(state.sessions);
   if (!state.sessions.length) {
     return `<header class="page-head"><h1>History</h1></header>
-      <div class="empty-state"><p>No workouts yet.</p><button class="btn primary" data-action="tab" data-tab="train">Start your first one</button></div>`;
+      <div class="empty-state"><p>No workouts yet.</p><button class="btn primary" data-action="tab" data-tab="suggest">Start your first one</button></div>`;
   }
   const items = state.sessions.map((sess, idx) => ({ sess, idx })).reverse().map(({ sess, idx }) => {
-    const t = sessionTotals(sess);
     const open = ui.openSession === idx;
     const isRoutine = sess.kind === 'routine';
     const blocksDone = isRoutine ? sess.blocks.filter((b) => b.result !== 'skipped').length : 0;
@@ -766,14 +686,14 @@ function renderHistory() {
           <div class="right small">
             ${isRoutine
               ? `<b>${blocksDone}/${sess.blocks.length}</b> blocks`
-              : `<b>${t.sets}</b> sets<br>${t.reps ? `${t.reps} reps` : ''}${t.reps && t.seconds ? ' · ' : ''}${t.seconds ? `${t.seconds}s held` : ''}`}
+              : `<b>${sess.exercises.length}</b> exercise${sess.exercises.length === 1 ? '' : 's'}`}
           </div>
         </button>
         ${open ? `
           <ul class="detail">
             ${isRoutine
               ? sess.blocks.map((b) => `<li><span>${esc(b.name ?? b.title)}${b.name ? ` <span class="muted small">${esc(b.title)}</span>` : ''}</span><span class="muted">${esc(b.result)}</span></li>`).join('')
-              : sess.exercises.map((e) => `<li><span>${esc(e.name)}</span><span class="muted">${e.done.map((n) => n + unit(e.type)).join(' · ')}</span></li>`).join('')}
+              : sess.exercises.map((e) => `<li><span>${esc(e.name)}</span><span class="muted">${esc(e.done.join(' · '))}</span></li>`).join('')}
           </ul>
           <button class="btn text danger" data-action="delete-session" data-i="${idx}">Delete</button>` : ''}
       </article>`;
@@ -782,7 +702,7 @@ function renderHistory() {
     <header class="page-head"><h1>History</h1></header>
     <section class="tiles">
       <div class="tile"><b>${s.total}</b><span>workouts</span></div>
-      <div class="tile"><b>${s.reps.toLocaleString()}</b><span>total reps</span></div>
+      <div class="tile"><b>${s.minutes.toLocaleString()}</b><span>minutes</span></div>
       <div class="tile"><b>${s.weekStreak}</b><span>week streak</span></div>
     </section>
     ${items}`;
@@ -794,16 +714,8 @@ function renderSettings() {
     <h2>Training profile</h2>
     ${profileCard()}
     <article class="card">
-      <label class="field">
-        <span>Rest between sets</span>
-        <div class="stepper">
-          <button data-action="rest-adj" data-d="-15" aria-label="15 seconds less">−</button>
-          <output>${formatClock(state.settings.rest)}</output>
-          <button data-action="rest-adj" data-d="15" aria-label="15 seconds more">+</button>
-        </div>
-      </label>
       <label class="field toggle">
-        <span>Sound when rest ends</span>
+        <span>Beeps during workouts</span>
         <input type="checkbox" data-action="sound" ${state.settings.sound ? 'checked' : ''}>
       </label>
     </article>
@@ -834,8 +746,7 @@ function ratingPanel(session) {
 
 function renderOverlay() {
   if (ui.summary) {
-    const { session, suggestions } = ui.summary;
-    const t = session ? sessionTotals(session) : null;
+    const { session } = ui.summary;
     return `
       <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sum-title">
         <h2 id="sum-title">${session ? 'Workout complete 💪' : 'Workout ended'}</h2>
@@ -843,12 +754,7 @@ function renderOverlay() {
           : session.kind === 'routine'
             ? `<p class="muted">${formatDuration(session.endedAt - session.startedAt)}</p>
                <ul class="detail">${session.blocks.map((b) => `<li><span>${esc(b.name ?? b.title)}${b.name ? ` <span class="muted small">${esc(b.title)}</span>` : ''}</span><span class="muted">${esc(b.result)}</span></li>`).join('')}</ul>`
-            : `<p class="muted">${formatDuration(session.endedAt - session.startedAt)} · ${t.sets} sets${t.reps ? ` · ${t.reps} reps` : ''}${t.seconds ? ` · ${t.seconds}s held` : ''}</p>`}
-        ${suggestions.map((s) => `
-          <div class="suggest ${s.kind}">
-            <p>${s.kind === 'advance' ? `<b>Level up!</b> You maxed out ${esc(s.from)}. Move on to <b>${esc(s.to)}</b>?` : `${esc(s.from)} was tough today. Step back to <b>${esc(s.to)}</b> for a while?`}</p>
-            <button class="btn ${s.kind === 'advance' ? 'primary' : 'secondary'}" data-action="apply" data-track="${s.track}" data-level="${s.level}">${s.kind === 'advance' ? 'Level up' : 'Step back'}</button>
-          </div>`).join('')}
+            : `<p class="muted">${formatDuration(session.endedAt - session.startedAt)}</p>`}
         ${session?.kind === 'routine' ? ratingPanel(session) : ''}
         <button class="btn ghost full" data-action="close-summary">${session?.kind === 'routine' && !session.feel ? 'Skip' : 'Done'}</button>
       </div>`;
@@ -871,18 +777,6 @@ function renderOverlay() {
           <button class="btn primary grow" data-action="start-advice" data-accept="1">Try ${esc(to)}</button>
           <button class="btn secondary grow" data-action="start-advice" data-accept="0">Keep ${esc(now)}</button>
         </div>
-      </div>`;
-  }
-  if (ui.restEndsAt) {
-    return `
-      <div class="sheet rest" role="dialog" aria-modal="true" aria-label="Rest timer">
-        <p class="eyebrow">Rest</p>
-        <div class="clock" data-tick="rest">${formatClock((ui.restEndsAt - Date.now()) / 1000)}</div>
-        <div class="row gap center">
-          <button class="btn secondary" data-action="rest-add" data-d="-15">−15s</button>
-          <button class="btn secondary" data-action="rest-add" data-d="15">+15s</button>
-        </div>
-        <button class="btn primary full" data-action="skip-rest">Skip rest</button>
       </div>`;
   }
   return '';
@@ -931,27 +825,6 @@ function tickRoutine(now) {
 function tick() {
   const now = Date.now();
   if (state.activeRoutine) tickRoutine(now);
-  if (state.active) {
-    const el = document.querySelector('[data-tick="elapsed"]');
-    if (el) el.textContent = formatDuration(now - state.active.startedAt);
-  }
-  if (ui.holdStartedAt) {
-    ui.pending = Math.floor((now - ui.holdStartedAt) / 1000);
-    const el = document.querySelector('[data-tick="hold"]');
-    if (el) el.textContent = `${ui.pending}s`;
-  }
-  if (ui.restEndsAt) {
-    const left = (ui.restEndsAt - now) / 1000;
-    if (left <= 0) {
-      ui.restEndsAt = null;
-      beep();
-      toast('Rest over — next set!');
-      render();
-      return;
-    }
-    const el = document.querySelector('[data-tick="rest"]');
-    if (el) el.textContent = formatClock(left);
-  }
 }
 setInterval(tick, 250);
 
@@ -1046,6 +919,7 @@ const actions = {
     // Up to two; a third choice replaces the oldest.
     update(() => (state.builder.finishers = [...fins, d.id].slice(-MAX_FINISHERS)));
   },
+  'welcome-done': () => update(() => (state.onboarded = true)),
   'pf-toggle': () => { ui.profileOpen = !ui.profileOpen; render(); },
   'pf-level': (d) => update(() => (state.profile.level = Number(d.id))),
   'pf-equip': (d) => update(() => {
@@ -1140,7 +1014,7 @@ const actions = {
     if (a.results.some((r) => r.status !== 'done') && !confirm('Some blocks are not done yet. Finish anyway?')) return;
     const result = finishRoutine(state);
     ui.phaseKey = null;
-    ui.summary = { session: result.session, suggestions: [] };
+    ui.summary = { session: result.session };
     update(() => (state = result.state));
   },
   'rt-discard': () => {
@@ -1149,79 +1023,13 @@ const actions = {
     update(() => (state.activeRoutine = null));
   },
   tab: (d) => { ui.tab = d.tab; render(); window.scrollTo(0, 0); },
-  start: (d) => update(() => {
-    ui.returnTab = ui.tab;
-    ui.tab = 'train';
-    state.active = buildWorkout(d.id, state.levels);
-    ui.pending = null;
-  }),
-  goto: (d) => { state.active.current = Number(d.i); ui.pending = null; ui.holdStartedAt = null; save(); render(); },
-  adj: (d) => {
-    if (ui.holdStartedAt) return;
-    ui.pending = clamp((ui.pending ?? 0) + Number(d.d), 0, 999);
-    render();
-  },
-  hold: () => {
-    if (ui.holdStartedAt) {
-      ui.pending = Math.floor((Date.now() - ui.holdStartedAt) / 1000);
-      ui.holdStartedAt = null;
-    } else {
-      ui.holdStartedAt = Date.now();
-      ui.pending = 0;
-    }
-    render();
-  },
-  log: () => {
-    if (ui.holdStartedAt) actions.hold();
-    const ex = currentExercise();
-    update(() => ex.done.push(ui.pending ?? 0));
-    const w = state.active;
-    const allDone = w.exercises.every((e) => e.done.length >= e.sets);
-    if (ex.done.length === ex.sets && w.current < w.exercises.length - 1) toast(`${ex.name} done ✓`);
-    if (!allDone) actions.rest();
-  },
-  undo: () => update(() => { currentExercise().done.pop(); ui.pending = null; }),
-  next: () => {
-    const w = state.active;
-    const nextIdx = w.exercises.findIndex((e, i) => i > w.current && e.done.length < e.sets);
-    actions.goto({ i: nextIdx === -1 ? Math.min(w.current + 1, w.exercises.length - 1) : nextIdx });
-    window.scrollTo(0, 0);
-  },
-  rest: () => { ui.restEndsAt = Date.now() + state.settings.rest * 1000; render(); },
-  'rest-add': (d) => { ui.restEndsAt = Math.max(Date.now() + 1000, ui.restEndsAt + Number(d.d) * 1000); tick(); },
-  'skip-rest': () => { ui.restEndsAt = null; render(); },
-  finish: () => {
-    const w = state.active;
-    const incomplete = w.exercises.some((e) => e.done.length < e.sets);
-    if (incomplete && !confirm('Some sets are not logged yet. Finish anyway?')) return;
-    const result = finishWorkout(state);
-    ui.restEndsAt = null;
-    ui.holdStartedAt = null;
-    ui.pending = null;
-    ui.summary = { session: result.session, suggestions: result.suggestions };
-    update(() => (state = result.state));
-  },
-  discard: () => {
-    if (!confirm('Discard this workout? Logged sets will be lost.')) return;
-    ui.restEndsAt = null;
-    ui.holdStartedAt = null;
-    ui.pending = null;
-    update(() => (state.active = null));
-  },
-  apply: (d, el) => {
-    state.levels[d.track] = Number(d.level);
-    save();
-    el.closest('.suggest').innerHTML = `<p>✓ ${esc(trackById[d.track].name)} set to <b>${esc(stepFor(d.track, Number(d.level)).name)}</b>.</p>`;
-  },
   'close-summary': () => { ui.summary = null; render(); },
-  level: (d) => update(() => (state.levels[d.track] = Number(d.level))),
   toggle: (d) => { ui.openSession = ui.openSession === Number(d.i) ? null : Number(d.i); render(); },
   'delete-session': (d) => {
     if (!confirm('Delete this workout from history?')) return;
     ui.openSession = null;
     update(() => state.sessions.splice(Number(d.i), 1));
   },
-  'rest-adj': (d) => update(() => (state.settings.rest = clamp(state.settings.rest + Number(d.d), 15, 600))),
   sound: (d, el) => update(() => (state.settings.sound = el.checked)),
   export: () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -1246,16 +1054,14 @@ const actions = {
     }
   },
   reset: () => {
-    if (!confirm('Delete all workouts, levels and settings? This cannot be undone.')) return;
+    if (!confirm('Delete all workouts, ratings and settings? This cannot be undone.')) return;
     ui.summary = null;
-    ui.restEndsAt = null;
     ui.phaseKey = null;
     update(() => (state = defaultState()));
   },
 };
 
 document.addEventListener('click', (e) => {
-  if (e.target.id === 'overlay' && ui.restEndsAt && !ui.summary) return actions['skip-rest']();
   const el = e.target.closest('[data-action]');
   if (!el || el.tagName === 'INPUT') return;
   actions[el.dataset.action]?.(el.dataset, el);

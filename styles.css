@@ -199,6 +199,18 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 .intensity .stepper button { width: 44px; height: 44px; font-size: 1.2rem; background: var(--surface); }
 .intensity .stepper button:disabled { opacity: .35; cursor: default; }
 
+/* progress */
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.bars li { display: grid; grid-template-columns: 80px 1fr 32px; align-items: center; gap: 10px; font-size: .92rem; }
+.bars .bar { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; }
+.bars .bar span { display: block; height: 100%; background: var(--accent); border-radius: 5px; }
+.bars b { text-align: right; font-variant-numeric: tabular-nums; }
+.exercise-group { padding: 12px 16px; }
+.exercise-group > summary { cursor: pointer; list-style: none; }
+.exercise-group > summary::-webkit-details-marker { display: none; }
+.welcome { margin-top: 24px; }
+.welcome h1 { margin-top: 4px; }
+
 /* how it felt */
 .rate { margin-top: 16px; }
 .rate-buttons { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
@@ -282,6 +294,7 @@ nav {
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
 }
+nav[hidden] { display: none; }
 nav button {
   border: 0; background: none; color: var(--muted); font: inherit; font-size: .7rem; font-weight: 600; white-space: nowrap;
   padding: 8px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer;

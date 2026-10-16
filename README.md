@@ -15,7 +15,8 @@ A small, offline-first bodyweight training app. It runs in the browser and can b
 - **Guided timer** for every block: get-ready countdown, work and rest phases, beeps and a 3-2-1 countdown, pause, skip and restart. It picks up where you left off after a reload.
 - **Adjustable timings**: before a block starts, change its rounds, work, rest or total time. Changes to saved workouts are remembered.
 - **Tabata** means 20s on / 10s off: a circuit is 8 intervals (4 min), and a Tabata is 3 circuits (12 min), cycling through the exercises. Shorter lists repeat within a circuit. Workouts can set other timings.
-- **Skills**: sets-and-reps workouts built from ladders for Push, Pull, Legs, Core, Dip, Handstand and Planche, with automatic level-up suggestions.
+- **Progress**: workouts, this week and week streak; how your training spread across muscle groups in the last 4 weeks (with a hint when one falls behind); every exercise in the app by muscle group, with how often and when you last did it; and how your workouts felt.
+- **First launch**: a short welcome asks your level and equipment before anything else.
 - **History and stats**: workouts per week, week streak, and what you did in each block.
 - **Your data stays on your device** (localStorage). You can export or import a JSON backup.
 - Works offline (service worker) and keeps the screen awake during a workout.
@@ -38,12 +39,11 @@ npm test           # node --test, covers the pure logic in js/logic.js
 
 | File | Purpose |
 | --- | --- |
-| `js/data.js` | Exercise ladders and workout templates. Edit this to add exercises. |
 | `js/routines.js` | Your 12 trainings. Edit this to add or change them. |
 | `js/exercises.js` | Exercise list with muscle groups and cues. Edit this to add exercises. |
 | `js/generator.js` | Builds Surprise me! and Create workouts from your choices |
 | `js/options.js` | The durations, block kinds and focus options offered |
-| `js/logic.js` | Pure state logic (workout building, progression, block timers, stats) |
+| `js/logic.js` | Pure state logic: block timers, rotation rules, intensity, ratings, history and stats |
 | `js/app.js` | UI rendering, timers and event handling |
 | `styles.css` | Styles (light and dark mode) |
 | `sw.js`, `manifest.webmanifest` | PWA offline support and install metadata |

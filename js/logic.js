@@ -1,5 +1,4 @@
 // Pure state logic: no DOM access, so it can be unit-tested with `node --test`.
-import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { routineById, EXERCISES } from './routines.js';
 import {
   MODULES, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, SKILL_BLOCKS, MAX_FINISHERS, DEFAULT_BUILDER, LEVELS, EQUIPMENT,
@@ -11,17 +10,18 @@ export const STORAGE_KEY = 'calisthenics.v1';
 export function defaultState() {
   return {
     version: 1,
-    levels: Object.fromEntries(TRACKS.map((t) => [t.id, 0])),
+    onboarded: false, // the welcome (level + equipment) has been shown
     sessions: [],
-    active: null,
     activeRoutine: null,
     custom: [], // workouts saved from Create
     overrides: {}, // { routineId: { blockIndex: { work, rest, ... } } } timing edits
     intensity: {}, // { routineId | 'suggest' | 'create': step } see INTENSITY
     feelings: {}, // { same keys: { feel: 1–5, intensity, at } } the latest rating
     builder: copyBuilder(DEFAULT_BUILDER),
-    profile: { ...DEFAULT_PROFILE, equipment: [...DEFAULT_PROFILE.equipment] }, // level + equipment for Suggest / Create
-    settings: { rest: 90, sound: true, suggestMinutes: 60 },
+    // Level + equipment for Surprise me! and Create. A new user starts at Beginner with nothing
+    // ticked and sets both in the welcome; saved data without a profile gets DEFAULT_PROFILE.
+    profile: { level: 1, equipment: [] },
+    settings: { sound: true, suggestMinutes: 60 },
   };
 }
 
@@ -29,16 +29,12 @@ export function defaultState() {
 export function normalizeState(raw) {
   const base = defaultState();
   if (!raw || typeof raw !== 'object') return base;
-  const levels = { ...base.levels };
-  for (const t of TRACKS) {
-    const v = raw.levels?.[t.id];
-    if (Number.isInteger(v)) levels[t.id] = clamp(v, 0, t.steps.length - 1);
-  }
+  const sessions = Array.isArray(raw.sessions) ? raw.sessions.filter(isSession) : [];
   return {
     version: 1,
-    levels,
-    sessions: Array.isArray(raw.sessions) ? raw.sessions.filter(isSession) : [],
-    active: raw.active && Array.isArray(raw.active.exercises) ? raw.active : null,
+    // Anyone with saved data already chose a profile (or used the defaults) before the welcome existed.
+    onboarded: raw.onboarded === true || sessions.length > 0 || Boolean(raw.profile),
+    sessions,
     activeRoutine: isActiveRoutine(raw.activeRoutine) ? raw.activeRoutine : null,
     custom: Array.isArray(raw.custom) ? raw.custom.filter(isWorkout) : [],
     overrides: raw.overrides && typeof raw.overrides === 'object' && !Array.isArray(raw.overrides) ? raw.overrides : {},
@@ -47,7 +43,6 @@ export function normalizeState(raw) {
     builder: normalizeBuilder(raw.builder),
     profile: normalizeProfile(raw.profile),
     settings: {
-      rest: Number.isFinite(raw.settings?.rest) ? clamp(raw.settings.rest, 15, 600) : base.settings.rest,
       sound: typeof raw.settings?.sound === 'boolean' ? raw.settings.sound : base.settings.sound,
       suggestMinutes: SUGGEST_MINUTES.includes(raw.settings?.suggestMinutes) ? raw.settings.suggestMinutes : base.settings.suggestMinutes,
     },
@@ -111,95 +106,14 @@ function isActiveRoutine(a) {
   return Boolean(isWorkout(routine) && Array.isArray(a.results) && a.results.length === routine.blocks.length);
 }
 
+// Workouts, plus sets-and-reps sessions from the first version of the app (kept in history).
 function isSession(s) {
-  return s && typeof s.startedAt === 'number' && Array.isArray(s.exercises);
+  return Boolean(s && typeof s.startedAt === 'number' && typeof s.endedAt === 'number'
+    && (Array.isArray(s.blocks) || Array.isArray(s.exercises)));
 }
 
 export function clamp(v, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
-}
-
-export function stepFor(trackId, level) {
-  const track = trackById[trackId];
-  return track.steps[clamp(level, 0, track.steps.length - 1)];
-}
-
-export function buildWorkout(templateId, levels, now = Date.now()) {
-  const template = TEMPLATES.find((t) => t.id === templateId);
-  if (!template) throw new Error(`Unknown template: ${templateId}`);
-  return {
-    template: template.id,
-    name: template.name,
-    startedAt: now,
-    current: 0,
-    exercises: template.tracks.map((trackId) => {
-      const level = levels[trackId] ?? 0;
-      const step = stepFor(trackId, level);
-      return {
-        track: trackId,
-        level,
-        name: step.name,
-        type: step.type,
-        sets: step.sets,
-        min: step.min,
-        max: step.max,
-        done: [],
-      };
-    }),
-  };
-}
-
-// "advance" when every prescribed set hit the top of the range,
-// "regress" when no set reached the bottom of it, otherwise "stay".
-export function evaluate(ex) {
-  if (ex.done.length < ex.sets) return 'stay';
-  const counted = ex.done.slice(0, ex.sets);
-  if (counted.every((n) => n >= ex.max)) return 'advance';
-  if (Math.max(...counted) < ex.min) return 'regress';
-  return 'stay';
-}
-
-export function suggestions(workout, levels) {
-  const out = [];
-  for (const ex of workout.exercises) {
-    const verdict = evaluate(ex);
-    const track = trackById[ex.track];
-    if (verdict === 'advance' && ex.level < track.steps.length - 1 && levels[ex.track] === ex.level) {
-      out.push({ track: ex.track, kind: 'advance', from: ex.name, to: track.steps[ex.level + 1].name, level: ex.level + 1 });
-    } else if (verdict === 'regress' && ex.level > 0 && levels[ex.track] === ex.level) {
-      out.push({ track: ex.track, kind: 'regress', from: ex.name, to: track.steps[ex.level - 1].name, level: ex.level - 1 });
-    }
-  }
-  return out;
-}
-
-export function finishWorkout(state, now = Date.now()) {
-  const w = state.active;
-  if (!w) return { state, session: null, suggestions: [] };
-  const exercises = w.exercises.filter((e) => e.done.length > 0);
-  const session = {
-    template: w.template,
-    name: w.name,
-    startedAt: w.startedAt,
-    endedAt: now,
-    exercises: exercises.map(({ track, level, name, type, sets, min, max, done }) => ({ track, level, name, type, sets, min, max, done })),
-  };
-  const next = { ...state, active: null };
-  if (exercises.length > 0) next.sessions = [...state.sessions, session];
-  return { state: next, session: exercises.length ? session : null, suggestions: suggestions({ exercises }, state.levels) };
-}
-
-export function sessionTotals(session) {
-  let reps = 0;
-  let seconds = 0;
-  let sets = 0;
-  for (const ex of session.exercises) {
-    const sum = ex.done.reduce((a, b) => a + b, 0);
-    sets += ex.done.length;
-    if (ex.type === 'hold') seconds += sum;
-    else reps += sum;
-  }
-  return { reps, seconds, sets };
 }
 
 // Monday-based local week key, e.g. "2026-09-21".
@@ -222,32 +136,12 @@ export function stats(sessions, now = Date.now()) {
     streak++;
     cursor.setDate(cursor.getDate() - 7);
   }
-  let reps = 0;
-  for (const s of sessions) reps += sessionTotals(s).reps;
   return {
     total: sessions.length,
     thisWeek: sessions.filter((s) => weekKey(s.startedAt) === thisWeek).length,
     weekStreak: streak,
-    reps,
+    minutes: Math.round(sessions.reduce((a, s) => a + (s.endedAt - s.startedAt), 0) / 60000),
   };
-}
-
-// Best single set per session for one track, oldest first.
-export function trackHistory(sessions, trackId, limit = 12) {
-  const points = [];
-  for (const s of sessions) {
-    const ex = s.exercises.find((e) => e.track === trackId);
-    if (ex && ex.done.length) points.push({ at: s.startedAt, name: ex.name, level: ex.level, best: Math.max(...ex.done), type: ex.type });
-  }
-  return points.slice(-limit);
-}
-
-export function lastPerformance(sessions, trackId, level) {
-  for (let i = sessions.length - 1; i >= 0; i--) {
-    const ex = sessions[i].exercises.find((e) => e.track === trackId && e.level === level);
-    if (ex) return ex.done;
-  }
-  return null;
 }
 
 export function formatDuration(ms) {
@@ -592,4 +486,34 @@ export function trainingHistory(sessions, now = Date.now()) {
     }
   }
   return { recent, tired: Object.keys(load).filter((mg) => load[mg] >= 4) };
+}
+
+// ---------- progress ----------
+
+// Exercises done (blocks not skipped) in workouts since `since`: { id: { count, last } }.
+export function exerciseLog(sessions, since = 0) {
+  const log = {};
+  for (const sess of sessions) {
+    if (sess.kind !== 'routine' || sess.startedAt < since) continue;
+    for (const b of sess.blocks) {
+      if (!b.ex || b.result === 'skipped') continue;
+      for (const id of b.ex) {
+        if (!EXERCISES[id]?.g.length) continue; // warm-up, stretches
+        const entry = (log[id] ??= { count: 0, last: 0 });
+        entry.count += 1;
+        entry.last = Math.max(entry.last, sess.startedAt);
+      }
+    }
+  }
+  return log;
+}
+
+// How many exercises of each muscle group were done since `since`.
+export function muscleLoad(sessions, since = 0) {
+  const load = {};
+  for (const [id, { count }] of Object.entries(exerciseLog(sessions, since))) {
+    const mg = EXERCISES[id].mg;
+    if (mg) load[mg] = (load[mg] ?? 0) + count;
+  }
+  return load;
 }
