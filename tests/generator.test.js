@@ -203,3 +203,36 @@ test('beginners with a band get band-assisted pull-ups, chin-ups or dips; others
   assert.equal(usable(EXERCISES['triceps-dip'], { level: 2, equipment: [] }), false);
   assert.equal(usable(EXERCISES['bench-dip'], { level: 2, equipment: [] }), true);
 });
+
+test('history: recent exercises come up less, tired muscle groups get lighter, nothing is excluded', async () => {
+  const { trainingHistory } = await import('../js/logic.js');
+  const now = 1_000_000_000_000;
+  const sess = (hoursAgo, ex, result = 'done') => ({
+    kind: 'routine', startedAt: now - hoursAgo * 3600e3, endedAt: now - hoursAgo * 3600e3, blocks: [{ ex, result }],
+  });
+  const h = trainingHistory([
+    sess(100, ['squat']),
+    sess(72, ['pull-up', 'plank']),
+    sess(48, ['chin-up']),
+    sess(10, ['pull-up', 'chin-up', 'australian', 'archer-pull-up']),
+    sess(5, ['dip'], 'skipped'),
+  ], now);
+  assert.deepEqual(h.recent, { 'pull-up': 3, 'chin-up': 3, australian: 3, 'archer-pull-up': 3, plank: 1 });
+  assert.deepEqual(h.tired, ['back']);
+
+  // across many seeds, a tired Back and recently done exercises appear less often
+  const plan = ['opener-strength', 'skill-intervals', 'skill-holds', 'tabata', 'circuit'];
+  const count = (history, pred) => SEEDS.reduce((n, seed) => n + generateWorkout({ minutes: 75, plan, seed, history })
+    .blocks.flatMap((b) => b.items).filter((it) => pred(it.ex)).length, 0);
+  const isBack = (id) => EXERCISES[id].mg === 'back';
+  assert.ok(count({ recent: {}, tired: ['back'] }, isBack) < count(undefined, isBack));
+  const recent = { 'push-up': 3, 'pull-up': 3, 'hollow-hold': 3 };
+  const inRecent = (id) => id in recent;
+  assert.ok(count({ recent, tired: [] }, inRecent) < count(undefined, inRecent));
+  // and still valid workouts with no clashes
+  for (const seed of SEEDS) {
+    const w = generateWorkout({ minutes: 60, plan, seed, history: { recent, tired: ['back', 'core'] } });
+    assert.ok(isWorkout(w));
+    for (const b of w.blocks) assert.deepEqual(blockClashes(b), []);
+  }
+});

@@ -556,9 +556,40 @@ export function finishRoutine(state, now = Date.now()) {
     exercises: [],
     blocks: routine.blocks.map((b, i) => ({
       name: blockName(b), title: blockTitle(b), result: resultText(b, a.results[i]), ...(b.module ? { module: b.module } : {}),
+      ex: b.items.map((it) => it.ex),
     })),
   };
   const next = { ...state, activeRoutine: null };
   if (touched) next.sessions = [...state.sessions, session];
   return { state: next, session: touched ? session : null };
+}
+
+// ---------- looking back: variety and recovery ----------
+
+const HOUR = 3600000;
+
+// What the generator should know about recent training:
+//  recent — how recently each exercise was done in the last 3 workouts (3 = last one, 2, 1),
+//           so new workouts favour exercises you haven't done lately;
+//  tired  — muscle groups worked hard (4+ exercises) in the last 36 hours, to go lighter on them.
+// Skipped blocks don't count.
+export function trainingHistory(sessions, now = Date.now()) {
+  const done = (b) => b.ex && b.result !== 'skipped';
+  const workouts = sessions.filter((x) => x.kind === 'routine' && x.blocks?.some(done));
+  const recent = {};
+  workouts.slice(-3).reverse().forEach((sess, i) => {
+    for (const b of sess.blocks.filter(done)) {
+      for (const id of b.ex) recent[id] = Math.max(recent[id] ?? 0, 3 - i);
+    }
+  });
+  const load = {};
+  for (const sess of workouts.filter((x) => now - x.endedAt < 36 * HOUR)) {
+    for (const b of sess.blocks.filter(done)) {
+      for (const id of b.ex) {
+        const mg = EXERCISES[id]?.mg;
+        if (mg) load[mg] = (load[mg] ?? 0) + 1;
+      }
+    }
+  }
+  return { recent, tired: Object.keys(load).filter((mg) => load[mg] >= 4) };
 }

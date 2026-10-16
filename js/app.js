@@ -10,6 +10,7 @@ import {
   blockPhases, blockDuration, blockTitle, blockName, phaseAt, startRoutine, routineElapsed, finishRoutine,
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
   INTENSITY_RANGE, intensityOf, applyIntensity, intensify, FEELINGS, feelingOf, intensityAdvice, rateSession,
+  trainingHistory,
 } from './logic.js';
 
 // ---------- state ----------
@@ -221,6 +222,7 @@ function suggestedBase() {
   const seed = ui.seeds.suggest;
   return generateWorkout({
     minutes, plan: suggestPlan(minutes, rng(seed), lastFinisher()), seed, name: `Surprise · ${minutes} min`, profile: state.profile,
+    history: trainingHistory(state.sessions),
   });
 }
 
@@ -234,7 +236,7 @@ function createdBase() {
   const seed = ui.seeds.create;
   return generateWorkout({
     minutes: b.minutes, plan: createPlan(b), focus: b.focus, warmup: b.warmup, seed,
-    profile: state.profile,
+    profile: state.profile, history: trainingHistory(state.sessions),
   });
 }
 

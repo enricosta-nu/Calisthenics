@@ -160,6 +160,15 @@ function arrange(counts, k, before, rand) {
 
 // `avoid` holds groups the neighbouring exercises train; exercises that also train one of
 // them (like hanging leg raises, abs + grip, next to pull-ups) are only used as a fallback.
+// Variety and recovery from the user's history (see trainingHistory in logic.js): exercises done
+// in the last workouts are less likely (the more recent, the less), and muscle groups worked hard
+// in the last 36 hours are lighter. Nothing is ever excluded, only made less likely.
+function freshness(id, e, ctx) {
+  const recency = ctx.history.recent[id] ?? 0; // 3 = last workout, 2, 1, 0 = not lately
+  const tired = ctx.history.tired.includes(e.mg) ? 0.35 : 1;
+  return tired / (1 + 2 * recency);
+}
+
 // Can this user do this exercise? It must be in the approved reference, the user needs one of
 // its equipment options, and it must be at or below their level. A beginner with a band can
 // also get the band-assisted version of a level-2 exercise that allows one (pull-up, dip…).
@@ -203,7 +212,7 @@ function pickExercise(group, types, ctx, exclude, avoid = new Set(), neighbours 
     // Band-assisted moves are a stopgap: used when needed, but not preferred over unassisted ones.
     const levelWeight = e.level > profile.level ? 1.5 : gap === 0 ? 3 : gap === 1 ? 1.5 : 0.6;
     const focusWeight = ctx.focus !== 'balanced' && e.mg === ctx.focus ? 6 : 1;
-    return (levelWeight * focusWeight) / (1 + 3 * (ctx.used[id] ?? 0));
+    return (levelWeight * focusWeight * freshness(id, e, ctx)) / (1 + 3 * (ctx.used[id] ?? 0));
   });
   let r = ctx.rand() * weights.reduce((a, b) => a + b, 0);
   let i = 0;
@@ -263,7 +272,7 @@ function pickMuscle(mg, types, ctx, exclude, neighbours = [], extra = () => true
     const weights = pool.map(([pid, e]) => {
       const gap = ctx.profile.level - effectiveLevel(e, ctx.profile);
       const levelWeight = e.level > ctx.profile.level ? 1.5 : gap === 0 ? 3 : gap === 1 ? 1.5 : 0.6;
-      return levelWeight / (1 + 3 * (ctx.used[pid] ?? 0));
+      return (levelWeight * freshness(pid, e, ctx)) / (1 + 3 * (ctx.used[pid] ?? 0));
     });
     let r = ctx.rand() * weights.reduce((x, y) => x + y, 0);
     let i = 0;
@@ -420,7 +429,11 @@ export function workoutDuration(workout) {
   return main + TRANSITION_SECS * Math.max(0, workout.blocks.length - 1);
 }
 
-export function generateWorkout({ minutes, plan, focus = 'balanced', warmup = true, seed = 1, name, profile = DEFAULT_PROFILE }) {
+const NO_HISTORY = { recent: {}, tired: [] };
+
+export function generateWorkout({
+  minutes, plan, focus = 'balanced', warmup = true, seed = 1, name, profile = DEFAULT_PROFILE, history = NO_HISTORY,
+}) {
   const rand = rng(seed);
   const total = minutes * 60;
   const warm = warmup ? clamp(Math.round((total * 0.1) / 60) * 60, 300, 480) : 0;
@@ -429,7 +442,10 @@ export function generateWorkout({ minutes, plan, focus = 'balanced', warmup = tr
   const main = total - warm - cool - transitions;
   const targets = moduleTargets(plan, main);
 
-  const ctx = { rand, focus, profile, used: {}, usage: { pull: 0, push: 0, core: 0.1, legs: 0.2, handstand: 0 } };
+  // Tired groups start "already used", so finishers give them fewer of the extra slots.
+  const usage = { pull: 0, push: 0, core: 0.1, legs: 0.2, handstand: 0 };
+  for (const mg of history.tired) if (MG_SLOT[mg]) usage[MG_SLOT[mg]] += 1.5;
+  const ctx = { rand, focus, profile, history, used: {}, usage };
   const blocks = [];
   if (warmup) blocks.push({ ...easyBlock('warmup', 'Warm-up', warm, rand, 'jumping-jacks', profile), module: 'warmup' });
   plan.forEach((m, i) => blocks.push({ ...BUILDERS[m](targets[i], ctx), module: m }));
