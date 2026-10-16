@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EXERCISES } from '../js/exercises.js';
 import {
   generateWorkout, suggestPlan, createPlan, skillSection, workoutDuration, rng, MAIN_GROUPS, usable, partOf,
+  swapCandidates, nextSwap, swapItem,
 } from '../js/generator.js';
 import { isWorkout, blockClashes } from '../js/logic.js';
 import { moduleById } from '../js/options.js';
@@ -235,4 +236,46 @@ test('history: recent exercises come up less, tired muscle groups get lighter, n
     assert.ok(isWorkout(w));
     for (const b of w.blocks) assert.deepEqual(blockClashes(b), []);
   }
+});
+
+test('swap: alternatives share the muscle group, fit the profile, and cycle through all', () => {
+  const profile = { level: 2, equipment: ['bar', 'lowbar', 'dip', 'parallettes'] };
+  for (const seed of SEEDS) {
+    const w = generateWorkout({ minutes: 60, plan: suggestPlan(60, rng(seed)), seed, profile });
+    for (const block of w.blocks.filter((b) => !['warmup', 'cooldown'].includes(b.module))) {
+      block.items.forEach((it, i) => {
+        const cur = EXERCISES[it.ex];
+        const ids = swapCandidates(block, i, profile);
+        assert.ok(ids.includes(it.ex));
+        for (const id of ids) {
+          assert.equal(EXERCISES[id].mg, cur.mg, `${it.ex} → ${id}`);
+          assert.ok(usable(EXERCISES[id], profile));
+        }
+        // walk the whole cycle: every step is a valid block, and it comes back to the start
+        let blk = block;
+        for (let n = 0; n < ids.length; n++) {
+          const next = nextSwap(blk, i, profile);
+          if (!next) break;
+          blk = swapItem(blk, i, next, profile);
+          assert.deepEqual(blockClashes(blk), [], `${block.module} ${blk.items.map((x) => x.ex)}`);
+          assert.equal(new Set(blk.items.map((x) => x.ex)).size, blk.items.length, 'no duplicates in a block');
+        }
+        if (ids.length > 1) assert.equal(blk.items[i].ex, it.ex, 'the cycle wraps round');
+      });
+    }
+  }
+});
+
+test('swap keeps the kind of amount: reps stay reps (scaled), seconds stay seconds', () => {
+  const profile = { level: 2, equipment: ['bar', 'lowbar'] };
+  const block = { kind: 'amrap', minutes: 10, items: [{ ex: 'australian', reps: 10 }, { ex: 'push-up', reps: 12 }, { ex: 'plank', secs: 30 }] };
+  const a = swapItem(block, 0, 'chin-up', profile);
+  assert.deepEqual(a.items[0], { ex: 'chin-up', reps: 6 }); // australian 10 is its usual → chin-up's usual 6
+  const b = swapItem(block, 2, 'hollow-hold', profile);
+  assert.deepEqual(b.items[2], { ex: 'hollow-hold', secs: 30 });
+  const timed = { kind: 'interval', rounds: 4, work: 20, rest: 0, roundRest: 30, items: [{ ex: 'pull-up' }, { ex: 'push-up' }] };
+  assert.deepEqual(swapItem(timed, 0, 'chin-up', profile).items[0], { ex: 'chin-up' });
+  // a beginner with a band gets the band note on a swapped-in level-2 exercise
+  const beginner = { level: 1, equipment: ['bar', 'band'] };
+  assert.equal(swapItem(timed, 0, 'pull-up', beginner).items[0].note, 'with resistance band');
 });

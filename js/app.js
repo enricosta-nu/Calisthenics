@@ -1,6 +1,8 @@
 import { TRACKS, TEMPLATES, trackById } from './data.js';
 import { ROUTINES, EXERCISES, routineById } from './routines.js';
-import { generateWorkout, suggestPlan, createPlan, workoutDuration, rng, partOf } from './generator.js';
+import {
+  generateWorkout, suggestPlan, createPlan, workoutDuration, rng, partOf, nextSwap, swapItem,
+} from './generator.js';
 import {
   MODULES, PARTS, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, SKILL_BLOCKS, MAX_FINISHERS, LEVELS, EQUIPMENT,
 } from './options.js';
@@ -20,6 +22,8 @@ const ui = {
   tab: 'suggest',
   returnTab: 'suggest', // where to go back to when a workout ends
   seeds: { suggest: newSeed(), create: newSeed() }, // Shuffle picks a new seed
+  swaps: {}, // { suggest | create: { sig, map: { 'block:item': exerciseId } } } swapped exercises in previews
+  openItem: null, // 'scope:block:item' whose details stay open after a swap
   pending: null, // value in the set stepper
   holdStartedAt: null, // stopwatch for hold exercises
   restEndsAt: null,
@@ -220,10 +224,24 @@ function suggestedWorkout() {
 function suggestedBase() {
   const minutes = state.settings.suggestMinutes;
   const seed = ui.seeds.suggest;
-  return generateWorkout({
+  const opts = {
     minutes, plan: suggestPlan(minutes, rng(seed), lastFinisher()), seed, name: `Surprise · ${minutes} min`, profile: state.profile,
     history: trainingHistory(state.sessions),
-  });
+  };
+  return withSwaps('suggest', generateWorkout(opts), opts);
+}
+
+// Swaps belong to one generated workout: if anything that shapes it changes (shuffle, duration,
+// options, profile, a new workout in history), they no longer apply.
+function withSwaps(scope, workout, opts) {
+  const sig = JSON.stringify(opts);
+  if (ui.swaps[scope]?.sig !== sig) ui.swaps[scope] = { sig, map: {} };
+  let blocks = workout.blocks;
+  for (const [pos, id] of Object.entries(ui.swaps[scope].map)) {
+    const [b, i] = pos.split(':').map(Number);
+    blocks = blocks.map((blk, j) => (j === b ? swapItem(blk, i, id, state.profile) : blk));
+  }
+  return { ...workout, blocks };
 }
 
 function createdWorkout() {
@@ -234,22 +252,23 @@ function createdWorkout() {
 function createdBase() {
   const b = state.builder;
   const seed = ui.seeds.create;
-  return generateWorkout({
+  const opts = {
     minutes: b.minutes, plan: createPlan(b), focus: b.focus, warmup: b.warmup, seed,
     profile: state.profile, history: trainingHistory(state.sessions),
-  });
+  };
+  return withSwaps('create', generateWorkout(opts), opts);
 }
 
 // Full block-by-block view of a workout, used for previews.
 const PART_LABEL = { warmup: 'Warm-up', cooldown: 'Stretching', ...Object.fromEntries(PARTS.map((p) => [p.id, p.name])) };
 
-function workoutBlocks(workout) {
+function workoutBlocks(workout, scope) {
   return workout.blocks.map((b, i) => `
     <div class="block-preview">
       ${partOf(b) && partOf(b) !== 'warmup' && partOf(b) !== 'cooldown' ? `<p class="eyebrow">${esc(PART_LABEL[partOf(b)])}${b.module ? ` · ${esc(MODULES.find((m) => m.id === b.module)?.name ?? '')}` : ''}</p>` : ''}
       <p><b>${i + 1}. ${esc(blockName(b))}</b> <span class="muted small">${esc(blockTitle(b))}</span></p>
       ${b.note ? `<p class="muted small">${esc(b.note)}</p>` : ''}
-      ${itemList(b)}
+      ${itemList(b, null, scope && !['warmup', 'cooldown'].includes(partOf(b)) ? { scope, b: i } : null)}
     </div>`).join('');
 }
 
@@ -295,7 +314,7 @@ function workoutPreview(workout, buttons, key) {
       </div>
       ${key ? intensityControl(key) : ''}
       <div class="tags">${workout.blocks.map((b) => `<span class="tag">${esc(blockName(b))}</span>`).join('')}</div>
-      ${workoutBlocks(workout)}
+      ${workoutBlocks(workout, key)}
       <div class="row gap sticky-actions">${buttons}</div>
     </article>`;
 }
@@ -416,16 +435,21 @@ function amountOf(it) {
   return '';
 }
 
-function itemList(block, current) {
-  return `<ul class="items">${block.items.map((it) => {
+// `swap` ({ scope, b }) adds a Swap button to each exercise: scope is 'suggest' / 'create' for
+// previews, or 'active' for the block about to start in the player.
+function itemList(block, current, swap) {
+  return `<ul class="items">${block.items.map((it, i) => {
     const ex = EXERCISES[it.ex];
     const amt = amountOf(it);
+    const canSwap = swap && ex.g.length;
+    const open = canSwap && ui.openItem === `${swap.scope}:${swap.b}:${i}`;
     return `
       <li class="${it === current ? 'current' : ''}">
-        <details>
+        <details ${open ? 'open' : ''}>
           <summary>${amt ? `<span class="amt">${esc(amt)}</span>` : ''}${esc(ex.name)}${it.note ? ` <span class="muted">· ${esc(it.note)}</span>` : ''}</summary>
           <p class="muted small">${esc(ex.cue)}</p>
           ${ex.main ? `<p class="muted small"><b>Works:</b> ${esc(ex.main)}${ex.secondary ? ` · <b>also:</b> ${esc(ex.secondary)}` : ''}</p>` : ''}
+          ${canSwap ? `<button class="btn text swap" data-action="swap" data-scope="${swap.scope}" data-b="${swap.b}" data-i="${i}">↻ Swap exercise</button>` : ''}
         </details>
       </li>`;
   }).join('')}</ul>`;
@@ -524,7 +548,7 @@ function renderTimer(a, block, phases) {
     return `
       <article class="card timer">
         ${blockHeader(a, block)}
-        ${itemList(block)}
+        ${itemList(block, null, { scope: 'active', b: a.block })}
         <div class="clock">${formatClock(total - phases[0].secs)}</div>
         ${timingEditor(a, block)}
         <button class="btn primary big full" data-action="rt-start">Start block</button>
@@ -583,7 +607,7 @@ function renderCircuit(a, block) {
   return `
     <article class="card">
       ${blockHeader(a, block)}
-      ${itemList(block)}
+      ${itemList(block, null, n ? null : { scope: 'active', b: a.block })}
       ${n ? '' : timingEditor(a, block)}
       <div class="sets">${Array.from({ length: Math.max(target, n) }, (_, i) => `<span class="set ${i < n ? 'great' : 'empty'}">${i < n ? '✓' : i + 1}</span>`).join('')}</div>
       <div class="row gap">
@@ -973,6 +997,22 @@ function resetBlockTimer(a) {
 const actions = {
   'rt-begin': (d) => askThenStart({ type: 'rt', id: d.id }),
   'gen-start': (d) => askThenStart({ type: 'gen', which: d.which }),
+  swap: (d) => {
+    const b = Number(d.b);
+    const i = Number(d.i);
+    const block = d.scope === 'active'
+      ? routineOf(state.activeRoutine).blocks[b]
+      : (d.scope === 'suggest' ? suggestedBase() : createdBase()).blocks[b];
+    const next = nextSwap(block, i, state.profile);
+    if (!next) return toast('No other exercise fits here with your level and equipment.');
+    ui.openItem = `${d.scope}:${b}:${i}`;
+    if (d.scope === 'active') {
+      update(() => (routineOf(state.activeRoutine).blocks[b] = swapItem(block, i, next, state.profile)));
+    } else {
+      ui.swaps[d.scope].map[`${b}:${i}`] = next;
+      render();
+    }
+  },
   'start-advice': (d) => {
     const { target, advice } = ui.pendingStart;
     ui.pendingStart = null;

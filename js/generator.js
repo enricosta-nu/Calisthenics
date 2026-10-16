@@ -466,3 +466,50 @@ export function partOf(block) {
   if (block.module === 'warmup' || block.module === 'cooldown') return block.module;
   return moduleById[block.module]?.part ?? null;
 }
+
+// ---------- swapping one exercise ----------
+
+// Alternatives for item `index` of a block: same muscle group (or slot group for exercises outside
+// the reference), usable with this profile, not already elsewhere in the block, and not clashing
+// with its neighbours. Reps or holds alike (EMOMs: reps only). The list doesn't depend on which
+// alternative is currently in place, so repeated swaps cycle through all of them and back.
+export function swapCandidates(block, index, profile) {
+  const current = block.items[index].ex;
+  const cur = EXERCISES[current];
+  const k = block.items.length;
+  const loops = block.kind !== 'circuit' || block.rounds > 1;
+  const neighbours = [index > 0 ? index - 1 : loops && k > 2 ? k - 1 : null, index < k - 1 ? index + 1 : loops && k > 2 ? 0 : null]
+    .filter((j) => j != null && j !== index).map((j) => block.items[j].ex);
+  const elsewhere = new Set(block.items.filter((_, j) => j !== index).map((it) => it.ex));
+  const styles = block.kind === 'emom' ? ['reps'] : ['reps', 'hold'];
+  const same = (e) => (cur.mg ? e.mg === cur.mg : e.g[0] === cur.g[0]);
+  const ids = Object.entries(EXERCISES)
+    .filter(([id, e]) => !elsewhere.has(id) && same(e) && styles.includes(e.t) && usable(e, profile)
+      && !neighbours.some((n) => exercisesClash(n, id)))
+    .map(([id]) => id);
+  if (!ids.includes(current)) ids.push(current);
+  const gap = (id) => Math.abs(profile.level - effectiveLevel(EXERCISES[id], profile));
+  return ids.sort((x, y) => gap(x) - gap(y) || EXERCISES[x].name.localeCompare(EXERCISES[y].name));
+}
+
+// The next alternative after the current one (wrapping round), or null if there's none.
+export function nextSwap(block, index, profile) {
+  const ids = swapCandidates(block, index, profile);
+  if (ids.length < 2) return null;
+  return ids[(ids.indexOf(block.items[index].ex) + 1) % ids.length];
+}
+
+// A block with item `index` replaced by exercise `id`, keeping the kind of amount it had
+// (reps scaled to the new exercise's usual reps, or seconds) and the band note rules.
+export function swapItem(block, index, id, profile) {
+  const old = block.items[index];
+  const before = EXERCISES[old.ex];
+  const e = EXERCISES[id];
+  const item = { ex: id };
+  if (bandHelps(e, profile)) item.note = e.level > profile.level ? 'with resistance band' : 'band if needed';
+  if (old.reps != null || old.secs != null || old.text) {
+    if (e.t === 'hold') item.secs = old.secs ?? e.secs;
+    else item.reps = old.reps != null && before.reps ? Math.max(2, Math.round((old.reps / before.reps) * e.reps)) : e.reps;
+  }
+  return { ...block, items: block.items.map((it, i) => (i === index ? item : it)) };
+}
