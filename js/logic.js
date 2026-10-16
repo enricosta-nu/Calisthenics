@@ -21,6 +21,7 @@ export function defaultState() {
     // Level + equipment for Surprise me! and Create. A new user starts at Beginner with nothing
     // ticked and sets both in the welcome; saved data without a profile gets DEFAULT_PROFILE.
     profile: { level: 1, equipment: [] },
+    today: null, // { date: 'YYYY-MM-DD', equipment: [...] } equipment for today only
     settings: { sound: true, suggestMinutes: 60 },
   };
 }
@@ -42,6 +43,9 @@ export function normalizeState(raw) {
     feelings: normalizeFeelings(raw.feelings),
     builder: normalizeBuilder(raw.builder),
     profile: normalizeProfile(raw.profile),
+    today: raw.today && typeof raw.today.date === 'string' && Array.isArray(raw.today.equipment)
+      ? { date: raw.today.date, equipment: raw.today.equipment.filter((k) => EQUIPMENT.some((e) => e.id === k)) }
+      : null,
     settings: {
       sound: typeof raw.settings?.sound === 'boolean' ? raw.settings.sound : base.settings.sound,
       suggestMinutes: SUGGEST_MINUTES.includes(raw.settings?.suggestMinutes) ? raw.settings.suggestMinutes : base.settings.suggestMinutes,
@@ -516,4 +520,19 @@ export function muscleLoad(sessions, since = 0) {
     if (mg) load[mg] = (load[mg] ?? 0) + count;
   }
   return load;
+}
+
+// ---------- today's equipment ----------
+
+// Local calendar day, e.g. "2026-10-16".
+export function dayKey(ts = Date.now()) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// The profile workouts are built with: the usual one, or with today's equipment if it was set
+// today (it expires by itself the next day).
+export function effectiveProfile(state, now = Date.now()) {
+  const today = state.today?.date === dayKey(now) ? state.today : null;
+  return today ? { ...state.profile, equipment: today.equipment } : state.profile;
 }

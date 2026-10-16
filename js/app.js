@@ -10,7 +10,7 @@ import {
   blockPhases, blockDuration, blockTitle, blockName, phaseAt, startRoutine, routineElapsed, finishRoutine,
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
   INTENSITY_RANGE, intensityOf, applyIntensity, intensify, FEELINGS, feelingOf, intensityAdvice, rateSession,
-  trainingHistory,
+  trainingHistory, dayKey, effectiveProfile,
 } from './logic.js';
 
 // ---------- state ----------
@@ -177,7 +177,8 @@ function profileCard() {
       <div class="profile-line row between">
         <span><b>${esc(level.name)}</b> · ${esc(kit.length ? kit.join(', ') : 'No equipment')}</span>
         <button class="btn text" data-action="pf-toggle">Change</button>
-      </div>`;
+      </div>
+      ${todayLine()}`;
   }
   return `
     <article class="card profile">
@@ -199,6 +200,25 @@ function lastFinisher() {
   return null;
 }
 
+// Equipment for today only, e.g. when travelling. Shown under the profile on Surprise me! and Create.
+function todayLine() {
+  if (ui.tab === 'settings') return '';
+  const set = state.today?.date === dayKey();
+  const kit = effectiveProfile(state).equipment;
+  const names = EQUIPMENT.filter((e) => kit.includes(e.id)).map((e) => e.name);
+  if (ui.todayOpen) {
+    return `
+      <article class="card today">
+        <div class="row between"><h3>Today I have…</h3><button class="btn text" data-action="today-toggle">Done</button></div>
+        ${chips('today-equip', EQUIPMENT, (id) => kit.includes(id), 'Equipment today')}
+        <p class="muted small">Only for today: tomorrow it goes back to your usual equipment.${set ? ' <button class="btn text" data-action="today-reset">Back to usual now</button>' : ''}</p>
+      </article>`;
+  }
+  return set
+    ? `<div class="today-line row between"><span><b>Today only:</b> ${esc(names.length ? names.join(', ') : 'no equipment')}</span><button class="btn text" data-action="today-toggle">Change</button></div>`
+    : '<div class="today-line row between"><span class="muted">Somewhere else today?</span><button class="btn text" data-action="today-toggle">Today\'s equipment</button></div>';
+}
+
 function suggestedWorkout() {
   return applyIntensity(suggestedBase(), intensityStep('suggest'));
 }
@@ -207,7 +227,7 @@ function suggestedBase() {
   const minutes = state.settings.suggestMinutes;
   const seed = ui.seeds.suggest;
   const opts = {
-    minutes, plan: suggestPlan(minutes, rng(seed), lastFinisher()), seed, name: `Surprise · ${minutes} min`, profile: state.profile,
+    minutes, plan: suggestPlan(minutes, rng(seed), lastFinisher()), seed, name: `Surprise · ${minutes} min`, profile: effectiveProfile(state),
     history: trainingHistory(state.sessions),
   };
   return withSwaps('suggest', generateWorkout(opts), opts);
@@ -221,7 +241,7 @@ function withSwaps(scope, workout, opts) {
   let blocks = workout.blocks;
   for (const [pos, id] of Object.entries(ui.swaps[scope].map)) {
     const [b, i] = pos.split(':').map(Number);
-    blocks = blocks.map((blk, j) => (j === b ? swapItem(blk, i, id, state.profile) : blk));
+    blocks = blocks.map((blk, j) => (j === b ? swapItem(blk, i, id, effectiveProfile(state)) : blk));
   }
   return { ...workout, blocks };
 }
@@ -236,7 +256,7 @@ function createdBase() {
   const seed = ui.seeds.create;
   const opts = {
     minutes: b.minutes, plan: createPlan(b), focus: b.focus, warmup: b.warmup, seed,
-    profile: state.profile, history: trainingHistory(state.sessions),
+    profile: effectiveProfile(state), history: trainingHistory(state.sessions),
   };
   return withSwaps('create', generateWorkout(opts), opts);
 }
@@ -876,11 +896,11 @@ const actions = {
     const block = d.scope === 'active'
       ? routineOf(state.activeRoutine).blocks[b]
       : (d.scope === 'suggest' ? suggestedBase() : createdBase()).blocks[b];
-    const next = nextSwap(block, i, state.profile);
+    const next = nextSwap(block, i, effectiveProfile(state));
     if (!next) return toast('No other exercise fits here with your level and equipment.');
     ui.openItem = `${d.scope}:${b}:${i}`;
     if (d.scope === 'active') {
-      update(() => (routineOf(state.activeRoutine).blocks[b] = swapItem(block, i, next, state.profile)));
+      update(() => (routineOf(state.activeRoutine).blocks[b] = swapItem(block, i, next, effectiveProfile(state))));
     } else {
       ui.swaps[d.scope].map[`${b}:${i}`] = next;
       render();
@@ -921,6 +941,12 @@ const actions = {
   },
   'welcome-done': () => update(() => (state.onboarded = true)),
   'pf-toggle': () => { ui.profileOpen = !ui.profileOpen; render(); },
+  'today-toggle': () => { ui.todayOpen = !ui.todayOpen; render(); },
+  'today-equip': (d) => update(() => {
+    const kit = effectiveProfile(state).equipment;
+    state.today = { date: dayKey(), equipment: kit.includes(d.id) ? kit.filter((k) => k !== d.id) : [...kit, d.id] };
+  }),
+  'today-reset': () => { ui.todayOpen = false; update(() => (state.today = null)); },
   'pf-level': (d) => update(() => (state.profile.level = Number(d.id))),
   'pf-equip': (d) => update(() => {
     const kit = state.profile.equipment;

@@ -16,6 +16,7 @@ A small, offline-first bodyweight training app. It runs in the browser and can b
 - **Adjustable timings**: before a block starts, change its rounds, work, rest or total time. Changes to saved workouts are remembered.
 - **Tabata** means 20s on / 10s off: a circuit is 8 intervals (4 min), and a Tabata is 3 circuits (12 min), cycling through the exercises. Shorter lists repeat within a circuit. Workouts can set other timings.
 - **Progress**: workouts, this week and week streak; how your training spread across muscle groups in the last 4 weeks (with a hint when one falls behind); every exercise in the app by muscle group, with how often and when you last did it; and how your workouts felt.
+- **Today's equipment**: somewhere else today (travelling, a different park)? Set what you have for today only; workouts and swaps use it, and it goes back to your usual equipment the next day.
 - **First launch**: a short welcome asks your level and equipment before anything else.
 - **History and stats**: workouts per week, week streak, and what you did in each block.
 - **Your data stays on your device** (localStorage). You can export or import a JSON backup.

@@ -68,3 +68,13 @@ test('formatters', () => {
   assert.equal(formatDuration(65000), '1m 05s');
   assert.equal(formatDuration(3720000), '1h 2m');
 });
+
+test("today's equipment applies only on the day it was set", async () => {
+  const { effectiveProfile, dayKey } = await import('../js/logic.js');
+  const now = new Date(2026, 9, 16, 10).getTime();
+  const state = { profile: { level: 2, equipment: ['bar', 'dip'] }, today: { date: dayKey(now), equipment: [] } };
+  assert.deepEqual(effectiveProfile(state, now), { level: 2, equipment: [] });
+  assert.deepEqual(effectiveProfile(state, now + 86400000), { level: 2, equipment: ['bar', 'dip'] });
+  assert.deepEqual(effectiveProfile({ ...state, today: null }, now).equipment, ['bar', 'dip']);
+  assert.equal(normalizeState({ today: { date: '2026-10-16', equipment: ['bar', 'jetpack'] } }).today.equipment.join(), 'bar');
+});
