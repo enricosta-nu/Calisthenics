@@ -1,7 +1,7 @@
 # Training schemes: modules and skeleton
 
 **Status: approved and built into the app.** An analysis of the 12 trainings (Allenamento 1–12),
-used to build the Suggest and Create sections on the same structure.
+used to build the Surprise me! (formerly Suggest) and Create sections on the same structure.
 
 ## The idea
 
@@ -104,7 +104,7 @@ The proposal:
 
 ## How the app builds it
 
-| Suggest | Skeleton |
+| Surprise me! | Skeleton |
 |---|---|
 | 45 min | opener → skill intervals → handstand holds → finisher |
 | 60 min | opener → skill intervals ×2 → handstand holds → finisher |

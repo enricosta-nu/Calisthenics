@@ -266,7 +266,7 @@ nav {
   padding-bottom: env(safe-area-inset-bottom);
 }
 nav button {
-  border: 0; background: none; color: var(--muted); font: inherit; font-size: .75rem; font-weight: 600;
+  border: 0; background: none; color: var(--muted); font: inherit; font-size: .7rem; font-weight: 600; white-space: nowrap;
   padding: 8px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer;
 }
 nav button span { font-size: 1.3rem; filter: grayscale(1); opacity: .7; }

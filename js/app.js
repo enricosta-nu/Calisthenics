@@ -215,7 +215,7 @@ function suggestedWorkout() {
   const minutes = state.settings.suggestMinutes;
   const seed = ui.seeds.suggest;
   return generateWorkout({
-    minutes, plan: suggestPlan(minutes, rng(seed), lastFinisher()), seed, name: `Suggested · ${minutes} min`, profile: state.profile,
+    minutes, plan: suggestPlan(minutes, rng(seed), lastFinisher()), seed, name: `Surprise · ${minutes} min`, profile: state.profile,
   });
 }
 
@@ -259,7 +259,7 @@ function workoutPreview(workout, buttons) {
 function renderSuggest() {
   const workout = suggestedWorkout();
   return `
-    <header class="page-head"><h1>Suggested workout</h1></header>
+    <header class="page-head"><h1>Surprise me!</h1></header>
     ${statTiles()}
     ${profileCard()}
     <h2>How long do you have?</h2>
