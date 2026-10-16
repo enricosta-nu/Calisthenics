@@ -192,6 +192,13 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 .timings > summary { cursor: pointer; padding: 8px 0; font-weight: 600; color: var(--accent); }
 .timings .field .stepper output { font-size: 1.2rem; min-width: 72px; }
 
+/* intensity */
+.intensity { margin: 10px 0 4px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); gap: 10px; }
+.intensity p { margin: 2px 0 0; }
+.intensity .stepper { margin: 0; gap: 8px; }
+.intensity .stepper button { width: 44px; height: 44px; font-size: 1.2rem; background: var(--surface); }
+.intensity .stepper button:disabled { opacity: .35; cursor: default; }
+
 /* my workouts */
 .card.up-next { border-color: var(--accent); }
 .preview { margin-top: 10px; }

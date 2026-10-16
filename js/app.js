@@ -9,6 +9,7 @@ import {
   sessionTotals, stats, trackHistory, lastPerformance, stepFor, formatDuration, formatClock, clamp,
   blockPhases, blockDuration, blockTitle, blockName, phaseAt, startRoutine, routineElapsed, finishRoutine,
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
+  INTENSITY_RANGE, intensityOf, applyIntensity, intensify,
 } from './logic.js';
 
 // ---------- state ----------
@@ -212,6 +213,10 @@ function lastFinisher() {
 }
 
 function suggestedWorkout() {
+  return applyIntensity(suggestedBase(), intensityStep('suggest'));
+}
+
+function suggestedBase() {
   const minutes = state.settings.suggestMinutes;
   const seed = ui.seeds.suggest;
   return generateWorkout({
@@ -220,6 +225,11 @@ function suggestedWorkout() {
 }
 
 function createdWorkout() {
+  return applyIntensity(createdBase(), intensityStep('create'));
+}
+
+// Saved as designed; intensity is a setting on top.
+function createdBase() {
   const b = state.builder;
   const seed = ui.seeds.create;
   return generateWorkout({
@@ -241,7 +251,31 @@ function workoutBlocks(workout) {
     </div>`).join('');
 }
 
-function workoutPreview(workout, buttons) {
+// Intensity for one workout (or for the Surprise / Create section): same exercises, more time or rounds.
+const intensityStep = (key) => state.intensity[key] ?? 0;
+
+function intensityControl(key) {
+  const step = intensityStep(key);
+  const info = intensityOf(step);
+  return `
+    <div class="intensity row between">
+      <div>
+        <span class="muted small">Intensity</span> <b>${esc(info.name)}</b>
+        <p class="muted small">${esc(info.blurb)}</p>
+      </div>
+      <div class="stepper">
+        <button data-action="intensity" data-key="${esc(key)}" data-d="-1" aria-label="easier" ${step <= INTENSITY_RANGE.min ? 'disabled' : ''}>−</button>
+        <button data-action="intensity" data-key="${esc(key)}" data-d="1" aria-label="harder" ${step >= INTENSITY_RANGE.max ? 'disabled' : ''}>+</button>
+      </div>
+    </div>`;
+}
+
+// A workout as it will be played: intensity first, then the user's own timing edits on top.
+function prepared(base, key) {
+  return applyOverrides(applyIntensity(base, intensityStep(key)), state.overrides[base.id]);
+}
+
+function workoutPreview(workout, buttons, key) {
   return `
     <article class="card workout-preview">
       <div class="row between">
@@ -250,6 +284,7 @@ function workoutPreview(workout, buttons) {
           <p class="muted small">~${Math.round(workoutDuration(workout) / 60)} min · ${workout.blocks.length} blocks</p>
         </div>
       </div>
+      ${key ? intensityControl(key) : ''}
       <div class="tags">${workout.blocks.map((b) => `<span class="tag">${esc(blockName(b))}</span>`).join('')}</div>
       ${workoutBlocks(workout)}
       <div class="row gap sticky-actions">${buttons}</div>
@@ -267,7 +302,7 @@ function renderSuggest() {
     <p class="muted small">Built like your trainings: warm-up, an opener (pull + push), a skill section (shoulders, core, handstand), a finisher, then stretching. At 75 min the finisher is split around the handstand.</p>
     ${workoutPreview(workout, `
       <button class="btn secondary" data-action="shuffle" data-which="suggest">↻ Shuffle</button>
-      <button class="btn primary grow" data-action="gen-start" data-which="suggest">Start workout</button>`)}`;
+      <button class="btn primary grow" data-action="gen-start" data-which="suggest">Start workout</button>`, 'suggest')}`;
 }
 
 const modulesFor = (part) => MODULES.filter((m) => m.part === part);
@@ -306,7 +341,7 @@ function renderCreate() {
     ${workoutPreview(workout, `
       <button class="btn secondary" data-action="shuffle" data-which="create">↻ Shuffle</button>
       <button class="btn secondary" data-action="cr-save">Save</button>
-      <button class="btn primary grow" data-action="gen-start" data-which="create">Start</button>`)}
+      <button class="btn primary grow" data-action="gen-start" data-which="create">Start</button>`, 'create')}
     ${state.custom.length ? `<h2>Saved workouts</h2>${routineCards(state.custom, { deletable: true })}` : ''}
     <h2>Your trainings</h2>
     <p class="muted small">Tap a block's timings when you start it to change work, rest and rounds.</p>
@@ -324,7 +359,7 @@ function routineCards(list, { upNext = false, deletable = false } = {}) {
   const lastIdx = list.findIndex((rt) => rt.id === lastId);
   const next = upNext ? list[(lastIdx + 1) % list.length].id : null;
   return list.map((base) => {
-    const rt = applyOverrides(base, state.overrides[base.id]);
+    const rt = prepared(base, base.id);
     const mins = Math.round(workoutDuration(rt) / 60);
     return `
       <article class="card ${rt.id === next ? 'up-next' : ''}">
@@ -336,6 +371,7 @@ function routineCards(list, { upNext = false, deletable = false } = {}) {
           </div>
           <button class="btn primary" data-action="rt-begin" data-id="${esc(rt.id)}">Start</button>
         </div>
+        ${intensityControl(base.id)}
         <details class="preview">
           <summary>${rt.blocks.map((b) => `<span class="tag">${esc(blockName(b))}</span>`).join('')}</summary>
           ${workoutBlocks(rt)}
@@ -854,11 +890,12 @@ setInterval(tick, 250);
 
 // ---------- actions ----------
 
-function beginRoutine(routine) {
+function beginRoutine(base, step = 0) {
+  const routine = step ? { ...base, name: `${base.name} · ${intensityOf(step).name}` } : base;
   unlockAudio();
   ui.returnTab = ui.tab === 'train' ? ui.returnTab : ui.tab;
   ui.tab = 'train';
-  update(() => (state.activeRoutine = startRoutine(routine)));
+  update(() => (state.activeRoutine = startRoutine(routine, Date.now(), step)));
   window.scrollTo(0, 0);
 }
 
@@ -872,9 +909,12 @@ function resetBlockTimer(a) {
 const actions = {
   'rt-begin': (d) => {
     const base = state.custom.find((w) => w.id === d.id) ?? routineById[d.id];
-    beginRoutine(applyOverrides(base, state.overrides[base.id]));
+    beginRoutine(prepared(base, base.id), intensityStep(base.id));
   },
-  'gen-start': (d) => beginRoutine(d.which === 'suggest' ? suggestedWorkout() : createdWorkout()),
+  'gen-start': (d) => beginRoutine(d.which === 'suggest' ? suggestedWorkout() : createdWorkout(), intensityStep(d.which)),
+  intensity: (d) => update(() => {
+    state.intensity[d.key] = clamp(intensityStep(d.key) + Number(d.d), INTENSITY_RANGE.min, INTENSITY_RANGE.max);
+  }),
   shuffle: (d) => { ui.seeds[d.which] = newSeed(); render(); },
   'sg-min': (d) => update(() => (state.settings.suggestMinutes = Number(d.id))),
   'cr-min': (d) => update(() => (state.builder.minutes = Number(d.id))),
@@ -903,7 +943,7 @@ const actions = {
   'cr-focus': (d) => update(() => (state.builder.focus = d.id)),
   'cr-warmup': (d, el) => update(() => (state.builder.warmup = el.checked)),
   'cr-save': () => {
-    const workout = createdWorkout();
+    const workout = createdBase();
     const name = prompt('Name this workout', workout.name)?.trim();
     if (!name) return;
     update(() => state.custom.unshift({ id: `c${Date.now()}`, name, blocks: workout.blocks }));
@@ -935,7 +975,7 @@ const actions = {
     const a = state.activeRoutine;
     const base = state.custom.find((w) => w.id === a.id) ?? routineById[a.id];
     delete state.overrides[a.id]?.[a.block];
-    routineOf(a).blocks[a.block] = JSON.parse(JSON.stringify(base.blocks[a.block]));
+    routineOf(a).blocks[a.block] = intensify(JSON.parse(JSON.stringify(base.blocks[a.block])), a.intensity ?? 0);
   }),
   'rt-start': () => {
     unlockAudio();

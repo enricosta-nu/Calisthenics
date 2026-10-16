@@ -166,3 +166,35 @@ test('the 12 trainings follow the rotation rules', () => {
     rt.blocks.forEach((b, i) => assert.deepEqual(blockClashes(b), [], `${rt.name} block ${i + 1}`));
   }
 });
+
+test('intensity: harder adds time and rounds, easier removes time, exercises never change', async () => {
+  const { intensify, applyIntensity, applyOverrides } = await import('../js/logic.js');
+  const holds = routineById.a1.blocks[2]; // 4 × 30s / 30s handstand
+  assert.deepEqual([1, 2, 3, -1].map((s) => [intensify(holds, s).rounds, intensify(holds, s).work]), [[4, 35], [5, 35], [5, 40], [4, 25]]);
+  const tab = routineById.a1.blocks[1]; // 12 min Tabata stays 12 min with 10s rest
+  assert.deepEqual([intensify(tab, 1).minutes, intensify(tab, 1).work, intensify(tab, 1).rest], [12, 25, 10]);
+  assert.equal(intensify(routineById.a2.blocks[2], 2).minutes, 16); // AMRAP 12 → 16
+  assert.equal(intensify(routineById.a2.blocks[2], -1).minutes, 10);
+  assert.equal(intensify(routineById.a10.blocks[0], 1).rounds, 9); // EMOM 8 → 9
+  assert.equal(intensify(routineById.a11.blocks[0], 1).rounds, 5); // circuit 4 → 5
+  // timed items inside an AMRAP keep their seconds; timed items in intervals grow with the work
+  assert.equal(intensify(routineById.a7.blocks[1], 1).items[1].secs, 35);
+  // stretching never changes; nor do the exercises
+  assert.equal(intensify(routineById.a9.blocks[6], 3), routineById.a9.blocks[6]);
+  const hard = applyIntensity(routineById.a4, 3);
+  assert.deepEqual(hard.blocks.map((b) => b.items.map((it) => it.ex)), routineById.a4.blocks.map((b) => b.items.map((it) => it.ex)));
+  assert.equal(applyIntensity(routineById.a4, 0), routineById.a4);
+  // a manual timing edit wins over intensity for that value
+  const both = applyOverrides(applyIntensity(routineById.a1, 1), { 2: { work: 45 } });
+  assert.equal(both.blocks[2].work, 45);
+  assert.equal(both.blocks[0].work, 35);
+});
+
+test('intensity is stored per workout and kept within range', () => {
+  const s = normalizeState({ intensity: { a1: 2, a2: 9, suggest: -5, bad: 'x' } });
+  assert.deepEqual(s.intensity, { a1: 2, a2: 3, suggest: -1 });
+  const a = startRoutine(routineById.a1, 0, 2);
+  assert.equal(a.intensity, 2);
+  const state = { ...defaultState(), activeRoutine: { ...a, results: a.results.map(() => ({ status: 'done', rounds: 0 })) } };
+  assert.equal(finishRoutine(state, 1000).session.intensity, 2);
+});

@@ -17,6 +17,7 @@ export function defaultState() {
     activeRoutine: null,
     custom: [], // workouts saved from Create
     overrides: {}, // { routineId: { blockIndex: { work, rest, ... } } } timing edits
+    intensity: {}, // { routineId | 'suggest' | 'create': step } see INTENSITY
     builder: copyBuilder(DEFAULT_BUILDER),
     profile: { ...DEFAULT_PROFILE, equipment: [...DEFAULT_PROFILE.equipment] }, // level + equipment for Suggest / Create
     settings: { rest: 90, sound: true, suggestMinutes: 60 },
@@ -40,6 +41,7 @@ export function normalizeState(raw) {
     activeRoutine: isActiveRoutine(raw.activeRoutine) ? raw.activeRoutine : null,
     custom: Array.isArray(raw.custom) ? raw.custom.filter(isWorkout) : [],
     overrides: raw.overrides && typeof raw.overrides === 'object' && !Array.isArray(raw.overrides) ? raw.overrides : {},
+    intensity: normalizeIntensity(raw.intensity),
     builder: normalizeBuilder(raw.builder),
     profile: normalizeProfile(raw.profile),
     settings: {
@@ -48,6 +50,13 @@ export function normalizeState(raw) {
       suggestMinutes: SUGGEST_MINUTES.includes(raw.settings?.suggestMinutes) ? raw.settings.suggestMinutes : base.settings.suggestMinutes,
     },
   };
+}
+
+function normalizeIntensity(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
+  return Object.fromEntries(Object.entries(map)
+    .filter(([, v]) => Number.isInteger(v))
+    .map(([k, v]) => [k, clamp(v, INTENSITY_RANGE.min, INTENSITY_RANGE.max)]));
 }
 
 function normalizeProfile(p) {
@@ -380,6 +389,55 @@ export function routineOf(active) {
   return active.routine ?? routineById[active.id];
 }
 
+// ---------- intensity ----------
+// The same workout, harder or easier, by changing only time and rounds (never the exercises).
+
+export const INTENSITY = [
+  { step: -1, name: 'Easier', blurb: '5s shorter sets · AMRAP −2 min · EMOM and circuits −1 round' },
+  { step: 0, name: 'Standard', blurb: 'As written' },
+  { step: 1, name: 'Harder', blurb: '+5s per set · AMRAP +2 min · EMOM and circuits +1 round' },
+  { step: 2, name: 'Harder +', blurb: '+5s per set and +1 round · AMRAP +4 min · EMOM +2 rounds' },
+  { step: 3, name: 'Hardest', blurb: '+10s per set and +1 round · AMRAP +6 min · EMOM +3 rounds' },
+];
+export const INTENSITY_RANGE = { min: -1, max: 3 };
+export const intensityOf = (step) => INTENSITY.find((i) => i.step === step) ?? INTENSITY[1];
+
+// Warm-up, stretching and rest-only blocks never change.
+function isEasyBlock(block) {
+  if (block.module === 'warmup' || block.module === 'cooldown') return true;
+  if (block.title === 'Warm-up' || block.title === 'Cool-down') return true;
+  return block.items.every((it) => ['stretch', 'rest', 'warmup'].includes(EXERCISES[it.ex]?.t));
+}
+
+export function intensify(block, step) {
+  if (!step || isEasyBlock(block)) return block;
+  const secsDelta = step < 0 ? -5 : step >= 3 ? 10 : 5;
+  const moreSecs = (v) => clamp(v + secsDelta, 10, 300);
+  switch (block.kind) {
+    case 'interval': {
+      const roundsDelta = step >= 2 ? 1 : 0;
+      return {
+        ...block,
+        work: moreSecs(block.work),
+        ...(block.rounds ? { rounds: Math.max(1, block.rounds + roundsDelta) } : {}),
+        items: block.items.map((it) => (it.secs != null ? { ...it, secs: moreSecs(it.secs) } : it)),
+      };
+    }
+    case 'amrap':
+      return { ...block, minutes: clamp(block.minutes + 2 * step, 3, 40) };
+    case 'emom':
+      return { ...block, rounds: clamp(block.rounds + step, 3, 30) };
+    case 'circuit':
+      return { ...block, rounds: Math.max(1, block.rounds + (step < 0 ? -1 : Math.ceil(step / 2))) };
+    default:
+      return block;
+  }
+}
+
+export function applyIntensity(routine, step) {
+  return step ? { ...routine, blocks: routine.blocks.map((b) => intensify(b, step)) } : routine;
+}
+
 // ---------- timing edits ----------
 
 const TIMING_LIMITS = {
@@ -410,10 +468,11 @@ export function applyOverrides(routine, overrides = {}) {
   return { ...routine, blocks: routine.blocks.map((b, i) => ({ ...b, ...(overrides[i] ?? {}) })) };
 }
 
-export function startRoutine(routine, now = Date.now()) {
+export function startRoutine(routine, now = Date.now(), intensity = 0) {
   return {
     id: routine.id,
     name: routine.name,
+    intensity,
     routine: JSON.parse(JSON.stringify({ id: routine.id, name: routine.name, blocks: routine.blocks })),
     startedAt: now,
     block: 0,
@@ -446,6 +505,7 @@ export function finishRoutine(state, now = Date.now()) {
     kind: 'routine',
     routine: a.id,
     name: a.name,
+    ...(a.intensity ? { intensity: a.intensity } : {}),
     startedAt: a.startedAt,
     endedAt: now,
     exercises: [],
