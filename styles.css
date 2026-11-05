@@ -11,6 +11,7 @@
   --warn: #c98a00;
   --bad: #d64545;
   --radius: 16px;
+  --muscle: #e23b3b;
   color-scheme: light dark;
 }
 
@@ -27,6 +28,7 @@
     --good: #3ecf7a;
     --warn: #f0b43c;
     --bad: #ff6b6b;
+    --muscle: #ff5c5c;
   }
 }
 
@@ -285,9 +287,59 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 .big-clock.paused .clock { opacity: .55; }
 .big-clock:focus-visible { outline: 2px solid var(--accent); }
 .up-next { margin: 4px 0 0; font-weight: 600; text-align: center; }
-.howto { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
-.howto ol { margin: 6px 0 8px; padding-left: 20px; display: grid; gap: 4px; }
-.howto .band-note { color: var(--accent); font-weight: 600; }
+/* work / recovery stripes inside each timeline block */
+.tl-seg { position: relative; overflow: hidden; }
+.tl-seg > span:last-child { position: relative; }
+.tl-ph { position: absolute; inset: 0; display: flex; flex-direction: column; pointer-events: none; }
+.tl-ph i { flex-basis: 0; min-height: 1px; }
+.tl-ph i.work { background: color-mix(in srgb, var(--text) 16%, transparent); }
+.tl-ph i.rest { background: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--surface) 75%, transparent) 3px 6px); }
+.tl-legend { display: flex; gap: 14px; justify-content: flex-start; font-size: .75rem; color: var(--muted); margin: 0 0 8px; }
+.tl-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -2px; background: color-mix(in srgb, var(--text) 16%, var(--surface-2)); }
+.tl-legend i.rest { background: repeating-linear-gradient(135deg, var(--surface-2) 0 3px, var(--surface) 3px 6px); outline: 1px solid var(--border); }
+
+/* exercise pictograms */
+.fig { display: block; width: 100%; height: auto; overflow: visible; }
+.fig .body, .fig .far { fill: none; stroke: var(--text); stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round; }
+.fig .far { stroke: var(--muted); opacity: .55; }
+.fig .torso { stroke-width: 9; }
+.fig .head { fill: var(--text); }
+.fig .m1, .fig .m2 { fill: none; stroke: var(--muscle); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.fig .m2 { opacity: .42; }
+.fig .dot { fill: var(--muscle); stroke: none; }
+.fig .floor { stroke: var(--border); stroke-width: 1.5; }
+.fig .prop { stroke: var(--muted); stroke-width: 3.2; stroke-linecap: round; }
+.fig .prop-thin { stroke: var(--border); stroke-width: 2; }
+.fig .prop-fill { fill: var(--muted); }
+.fig .prop-ring { fill: none; stroke: var(--muted); stroke-width: 2; }
+.fig .prop-box { fill: var(--surface-2); stroke: var(--border); stroke-width: 1.2; }
+.fig .prop-wall { stroke: var(--border); stroke-width: 3; }
+
+/* the how-to card: a button with the animated figure; opens the full explanation */
+.howto-card {
+  all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: 96px 1fr; gap: 14px; align-items: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px 10px 10px; margin-bottom: 12px;
+}
+.howto-card:active { transform: scale(.99); }
+.howto-card:focus-visible { outline: 2px solid var(--accent); }
+.howto-card .fig-box { background: var(--surface-2); border-radius: 12px; padding: 4px; }
+.howto-card > span:last-child > * { display: block; }
+.howto-card .muscle-key { display: flex; }
+.howto-card h3 { margin: 2px 0 4px; }
+.howto-card .more { color: var(--accent); font-weight: 700; font-size: .9rem; margin-top: 6px; }
+.howto-card.small { grid-template-columns: 64px 1fr; padding: 8px 12px 8px 8px; margin: 8px 0 4px; }
+.muscle-key { display: inline-flex; align-items: center; gap: 5px; }
+.muscle-key::before { content: ""; width: 10px; height: 4px; border-radius: 2px; background: var(--muscle); }
+.muscle-key.light::before { opacity: .42; }
+.band-note { color: var(--accent); font-weight: 600; }
+
+/* exercise sheet */
+.info-sheet .fig-box { background: var(--surface-2); border-radius: 16px; padding: 8px; max-width: 260px; margin: 8px auto 12px; }
+.info-sheet h3 { margin: 16px 0 6px; font-size: 1rem; }
+.info-sheet ol, .info-sheet ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.info-sheet .safe li::marker { content: "⚠︎  "; color: var(--warn); }
+.info-sheet .most li::marker { content: "✓  "; color: var(--good); }
+.info-sheet .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center; font-size: .85rem; color: var(--muted); }
 .name-field input { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); min-width: 0; width: 55%; }
 
 /* routine timer */

@@ -14,6 +14,8 @@ import {
   workoutTimeline, howToSteps,
   levelFor, GROUP_FEELINGS, trainedGroups, rateGroup, groupAdvice, answerGroupAdvice, BACKUP_EVERY, workoutsSinceBackup,
 } from './logic.js';
+import { figureSvg, animateFigures } from './figures.js';
+import { COACHING } from './coaching.js';
 
 // ---------- state ----------
 
@@ -28,6 +30,7 @@ const ui = {
   openSession: null,
   phaseKey: null, // "block:phase" of the routine timer, to detect phase changes
   lastCount: null, // last 3-2-1 countdown second that beeped
+  info: null, // { ex, note } exercise whose full explanation is open
 };
 
 function newSeed() {
@@ -152,6 +155,7 @@ function render() {
   overlay.innerHTML = renderOverlay();
   overlay.hidden = !overlay.innerHTML;
   overlay.toggleAttribute('data-enter', !overlay.hidden && !wasOpen);
+  animateFigures();
   tick();
   syncWakeLock();
 }
@@ -457,8 +461,7 @@ function itemList(block, current, swap) {
       <li class="${it === current ? 'current' : ''}">
         <details ${open ? 'open' : ''}>
           <summary>${amt ? `<span class="amt">${esc(amt)}</span>` : ''}${esc(ex.name)}${it.note ? ` <span class="muted">· ${esc(it.note)}</span>` : ''}</summary>
-          <p class="muted small">${esc(ex.cue)}</p>
-          ${ex.main ? `<p class="muted small"><b>Works:</b> ${esc(ex.main)}${ex.secondary ? ` · <b>also:</b> ${esc(ex.secondary)}` : ''}</p>` : ''}
+          ${howToCard(it, null, true)}
           ${canSwap ? `<button class="btn text swap" data-action="swap" data-scope="${swap.scope}" data-b="${swap.b}" data-i="${i}">↻ Swap exercise</button>` : ''}
         </details>
       </li>`;
@@ -485,6 +488,7 @@ function renderRoutine() {
           </div>
           <button class="btn ghost" data-action="rt-finish">Finish</button>
         </header>
+        <p class="tl-legend" aria-hidden="true"><span><i></i>Work</span><span><i class="rest"></i>Recovery</span></p>
         ${phases ? renderTimer(a, block, phases) : renderCircuit(a, block)}
         <div class="row between">
           ${isLast ? '<button class="btn text" data-action="rt-finish">Finish workout</button>' : '<button class="btn text" data-action="rt-next">Skip to next block →</button>'}
@@ -506,6 +510,7 @@ function timelineBar(a) {
           <button class="tl-seg part-${partOf(blocks[seg.index]) ?? 'none'} ${seg.index === a.block ? 'current' : ''} ${seg.status === 'done' ? 'done' : ''}"
             style="flex-grow:${seg.secs}" data-action="rt-goto" data-i="${seg.index}"
             aria-label="Block ${seg.index + 1}: ${esc(blockName(blocks[seg.index]))}${seg.status === 'done' ? ', done' : ''}">
+            ${phaseStripes(blocks[seg.index])}
             <span>${seg.status === 'done' ? '✓' : seg.index + 1}</span>
           </button>`).join('')}
         <span class="tl-marker" data-tick="tl-marker" style="top:${(t.position / t.total) * 100}%"></span>
@@ -513,18 +518,64 @@ function timelineBar(a) {
     </aside>`;
 }
 
-// The schematic explanation of one exercise: steps, muscles, equipment, band note.
-function howTo(item, label = 'How to') {
+// Work and recovery inside a block, as stripes: lighter = recovery. Merges neighbours of the same kind.
+function phaseStripes(block) {
+  const phases = blockPhases(block)?.filter((p) => p.kind !== 'ready');
+  if (!phases?.some((p) => p.kind === 'rest')) return '';
+  const runs = [];
+  for (const p of phases) {
+    const lastRun = runs[runs.length - 1];
+    if (lastRun?.kind === p.kind) lastRun.secs += p.secs;
+    else runs.push({ kind: p.kind, secs: p.secs });
+  }
+  return `<span class="tl-ph" aria-hidden="true">${runs.map((r) => `<i class="${r.kind}" style="flex-grow:${r.secs}"></i>`).join('')}</span>`;
+}
+
+const mainMuscles = (ex) => (ex.main ?? '').split(',').slice(0, 2).join(',').trim();
+
+// The exercise as a button: the animated figure, what it works; tap for the full explanation.
+function howToCard(item, label, small = false) {
   const ex = EXERCISES[item.ex];
-  const needs = (ex.needs ?? []).map((k) => EQUIPMENT.find((e) => e.id === k)?.name).filter(Boolean);
+  if (!ex || ex.t === 'rest') return '';
   return `
-    <section class="howto">
-      <p class="eyebrow">${esc(label)} · ${esc(ex.name)}</p>
-      <ol>${howToSteps(ex.cue).map((step) => `<li>${esc(step)}</li>`).join('')}</ol>
-      ${ex.main ? `<p class="small"><b>Works:</b> ${esc(ex.main)}${ex.secondary ? ` <span class="muted">· also ${esc(ex.secondary)}</span>` : ''}</p>` : ''}
-      ${needs.length ? `<p class="small muted">Needs: ${esc(needs.join(' or '))}</p>` : ''}
-      ${item.note ? `<p class="small band-note">${esc(item.note)}</p>` : ''}
-    </section>`;
+    <button class="howto-card ${small ? 'small' : ''}" data-action="ex-info" data-ex="${item.ex}" data-note="${esc(item.note ?? '')}">
+      <span class="fig-box">${figureSvg(item.ex)}</span>
+      <span>
+        ${label ? `<span class="eyebrow">${esc(label)}</span>` : ''}
+        ${small ? '' : `<h3>${esc(ex.name)}</h3>`}
+        ${ex.main ? `<span class="small muscle-key">${esc(mainMuscles(ex))}</span>` : `<span class="small muted">${esc(ex.cue)}</span>`}
+        <span class="more">Technique &amp; tips ›</span>
+      </span>
+    </button>`;
+}
+
+// The full explanation of one exercise, in a sheet.
+function infoSheet({ ex: id, note }) {
+  const ex = EXERCISES[id];
+  const co = COACHING[id];
+  const needs = (ex.needs ?? []).map((k) => EQUIPMENT.find((e) => e.id === k)?.name).filter(Boolean);
+  const list = (cls, items) => `<ul class="${cls}">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  const level = ex.level ? LEVELS.find((l) => l.id === ex.level)?.name : null;
+  return `
+    <div class="sheet info-sheet" role="dialog" aria-modal="true" aria-labelledby="info-title">
+      <h2 id="info-title">${esc(ex.name)}</h2>
+      <div class="fig-box">${figureSvg(id)}</div>
+      <p class="meta">
+        ${level ? `<span>${esc(level)}</span>` : ''}
+        <span>${ex.t === 'hold' ? 'Hold' : ex.t === 'reps' ? 'Reps' : ex.t === 'warmup' ? 'Warm-up' : ex.t === 'stretch' ? 'Stretch' : ''}</span>
+        <span>${needs.length ? `Needs ${esc(needs.join(' or '))}` : 'No equipment'}</span>
+      </p>
+      ${ex.main ? `<p class="small"><span class="muscle-key"><b>Works</b></span> ${esc(ex.main)}</p>` : ''}
+      ${ex.secondary ? `<p class="small"><span class="muscle-key light"><b>Also</b></span> ${esc(ex.secondary)}</p>` : ''}
+      ${note ? `<p class="small band-note">${esc(note)}</p>` : ''}
+      <h3>How to do it</h3>
+      <ol>${(co?.how ?? howToSteps(ex.cue)).map((step) => `<li>${esc(step)}</li>`).join('')}</ol>
+      ${co?.safe.length ? `<h3>Stay safe</h3>${list('safe', co.safe)}` : ''}
+      ${co?.most.length ? `<h3>Get the most out of it</h3>${list('most', co.most)}` : ''}
+      ${ex.band ? '<p class="small muted">Beginners: a resistance band can help until you can do it on your own.</p>' : ''}
+      <p class="small muted">General guidance, not medical advice. Stop if you feel sharp pain.</p>
+      <button class="btn primary full" data-action="info-close">Got it</button>
+    </div>`;
 }
 
 // What comes after the current phase, e.g. "Rest 10s → Push-up".
@@ -609,7 +660,7 @@ function renderTimer(a, block, phases) {
         ${itemList(block, null, { scope: 'active', b: a.block })}
         ${timingEditor(a, block)}
       </article>
-      ${howTo(block.items[0], whole ? 'First' : 'First up')}`;
+      ${howToCard(block.items[0], whole ? 'First' : 'First up')}`;
   }
 
   const pos = phaseAt(phases, elapsed);
@@ -653,7 +704,7 @@ function renderTimer(a, block, phases) {
       ${block.kind === 'amrap' ? roundsCounter(a) : ''}
       ${whole ? itemList(block) : ''}
     </article>
-    ${whole ? '' : howTo(focus, p.kind === 'work' ? 'Now' : 'Next')}`;
+    ${whole ? '' : howToCard(focus, p.kind === 'work' ? 'Now' : 'Next')}`;
 }
 
 function renderCircuit(a, block) {
@@ -672,7 +723,7 @@ function renderCircuit(a, block) {
       </div>
       ${done ? nextButton(a) : ''}
     </article>
-    ${block.items.length === 1 ? howTo(block.items[0]) : ''}`;
+    ${block.items.length === 1 ? howToCard(block.items[0], 'How to') : ''}`;
 }
 
 // ---------- progress ----------
@@ -892,6 +943,7 @@ function backupReminder() {
 }
 
 function renderOverlay() {
+  if (ui.info) return infoSheet(ui.info);
   if (ui.summary) {
     const { session } = ui.summary;
     return `
@@ -1205,6 +1257,8 @@ const actions = {
     update(() => (state.activeRoutine = null));
   },
   tab: (d) => { ui.tab = d.tab; render(); window.scrollTo(0, 0); },
+  'ex-info': (d) => { ui.info = { ex: d.ex, note: d.note }; render(); },
+  'info-close': () => { ui.info = null; render(); },
   'close-summary': () => { ui.summary = null; ui.groupAnswers = null; render(); },
   toggle: (d) => { ui.openSession = ui.openSession === Number(d.i) ? null : Number(d.i); render(); },
   'delete-session': (d) => {
@@ -1259,6 +1313,7 @@ const actions = {
 };
 
 document.addEventListener('click', (e) => {
+  if (e.target.id === 'overlay' && ui.info) { actions['info-close'](); return; } // tap outside the sheet
   const el = e.target.closest('[data-action]');
   if (!el || el.tagName === 'INPUT') return;
   actions[el.dataset.action]?.(el.dataset, el);

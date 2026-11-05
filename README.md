@@ -15,7 +15,7 @@ A small, offline-first bodyweight training app. It runs in the browser and can b
 - **Exercise details and swap**: tap any exercise for a form tip and the muscles it works. In Surprise me! and Create previews, and in any workout before a block starts, "↻ Swap exercise" cycles through alternatives for the same muscle group that fit your level and equipment, keeping the rotation rules.
 - **Variety and recovery**: new workouts favour exercises you haven't done in your last three workouts, and go lighter on muscle groups you worked hard in the last 36 hours.
 - **Guided timer** for every block: get-ready countdown, work and rest phases, beeps and a 3-2-1 countdown, pause, skip and restart. It picks up where you left off after a reload.
-- **Workout screen**: a timeline down the left shows the whole workout, coloured by part, with a marker for where you are (tap a block to jump to it). A big clock you tap to stop and restart. Below it, how to do the current exercise (or the next one, during rest), step by step, with the muscles it works. It greets you by name if you set one.
+- **Workout screen**: a timeline down the left shows the whole workout, coloured by part, with work and recovery as stripes inside each block and a marker for where you are (tap a block to jump to it). A big clock you tap to stop and restart. Below it, a card with an animated figure of the current exercise (or the next one, during rest) showing the main muscles in red; tap it for the full explanation: steps, how to stay safe, and how to get the most out of it. It greets you by name if you set one.
 - **Adjustable timings**: before a block starts, change its rounds, work, rest or total time. Changes to saved workouts are remembered.
 - **Tabata** means 20s on / 10s off: a circuit is 8 intervals (4 min), and a Tabata is 3 circuits (12 min), cycling through the exercises. Shorter lists repeat within a circuit. Workouts can set other timings.
 - **Progress**: workouts, this week and week streak; how your training spread across muscle groups in the last 4 weeks (with a hint when one falls behind); every exercise in the app by muscle group, with how often and when you last did it; and how your workouts felt.
@@ -47,6 +47,8 @@ npm test           # node --test, covers the pure logic in js/logic.js
 | `js/exercises.js` | Exercise list with muscle groups and cues. Edit this to add exercises. |
 | `js/generator.js` | Builds Surprise me! and Create workouts from your choices |
 | `js/options.js` | The durations, block kinds and focus options offered |
+| `js/figures.js` | Animated exercise pictograms: key poses, muscle highlights, the drawing and animation loop |
+| `js/coaching.js` | Each exercise's steps, safety tips and tips to get the most out of it |
 | `js/logic.js` | Pure state logic: block timers, rotation rules, intensity, ratings, history and stats |
 | `js/app.js` | UI rendering, timers and event handling |
 | `styles.css` | Styles (light and dark mode) |
