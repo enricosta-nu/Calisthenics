@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ROUTINES, EXERCISES, routineById } from '../js/routines.js';
 import {
   READY_SECS, exercisesClash, blockClashes, blockRounds, timingFields, adjustTiming, applyOverrides, isWorkout, blockPhases, blockDuration, phaseAt, blockTitle, startRoutine, routineElapsed,
-  finishRoutine, normalizeState, defaultState,
+  finishRoutine, normalizeState, defaultState, workoutTimeline, howToSteps,
 } from '../js/logic.js';
 
 test('every routine item points at a known exercise', () => {
@@ -222,4 +222,35 @@ test('how it felt: the rating is remembered per workout and only ever offers a c
   assert.equal(state.sessions[0].feel, 3);
   assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))).feelings, state.feelings);
   assert.deepEqual(normalizeState({ feelings: { x: { feel: 7, intensity: 0, at: 1 }, y: 'no' } }).feelings, {});
+});
+
+test('workoutTimeline: segments cover the workout and the marker follows the clock', () => {
+  const rt = routineById.a1;
+  const a = startRoutine(rt, 1000);
+  let tl = workoutTimeline(a, 5000);
+  assert.equal(tl.segments.length, rt.blocks.length);
+  assert.equal(tl.total, tl.segments.reduce((n, x) => n + x.secs, 0));
+  assert.equal(tl.position, 0); // not started yet
+  a.blockStartedAt = 10000;
+  tl = workoutTimeline(a, 10000 + (READY_SECS + 20) * 1000);
+  assert.equal(tl.position, 20);
+  a.pausedAt = 10000 + (READY_SECS + 20) * 1000; // stopped: the marker stays put
+  assert.equal(workoutTimeline(a, 10000 + 999999).position, 20);
+  a.block = 1; a.pausedAt = null; a.blockStartedAt = null;
+  a.results[0].status = 'done';
+  tl = workoutTimeline(a, 0);
+  assert.equal(tl.position, tl.segments[1].start);
+  assert.equal(tl.segments[0].status, 'done');
+});
+
+test('workoutTimeline: untimed circuits advance by rounds', () => {
+  const rt = routineById.a11; // starts with a 4-round circuit
+  const a = startRoutine(rt, 1000);
+  a.results[0].rounds = 2;
+  const tl = workoutTimeline(a, 2000);
+  assert.equal(tl.position, tl.segments[0].secs / 2);
+});
+
+test('howToSteps splits a cue into sentences', () => {
+  assert.deepEqual(howToSteps('Hang tall. Pull your chest up!  Lower slowly?'), ['Hang tall.', 'Pull your chest up!', 'Lower slowly?']);
 });

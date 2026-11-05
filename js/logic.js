@@ -24,7 +24,7 @@ export function defaultState() {
     today: null, // { date: 'YYYY-MM-DD', equipment: [...] } equipment for today only
     groupFeelings: {}, // { muscleGroup: [{ v: 1 easy | 2 ok | 3 hard, level, session }] } latest first, see rateGroup
     lastBackup: null, // { at, sessions } when the last backup was made, and how many workouts it had
-    settings: { sound: true, suggestMinutes: 60 },
+    settings: { sound: true, suggestMinutes: 60, name: '' }, // name: optional, to greet the user
   };
 }
 
@@ -54,6 +54,7 @@ export function normalizeState(raw) {
     settings: {
       sound: typeof raw.settings?.sound === 'boolean' ? raw.settings.sound : base.settings.sound,
       suggestMinutes: SUGGEST_MINUTES.includes(raw.settings?.suggestMinutes) ? raw.settings.suggestMinutes : base.settings.suggestMinutes,
+      name: typeof raw.settings?.name === 'string' ? raw.settings.name.trim().slice(0, 30) : '',
     },
   };
 }
@@ -622,4 +623,35 @@ export const BACKUP_EVERY = 5;
 // Workouts finished since the last backup; a reminder shows once it reaches BACKUP_EVERY.
 export function workoutsSinceBackup(state) {
   return state.sessions.length - (state.lastBackup?.sessions ?? 0);
+}
+
+// ---------- workout timeline ----------
+
+// The whole workout as segments (one per block, sized by its length) and how far along the user
+// is, in seconds, for the timeline bar in the player. The current block counts its timer (or its
+// rounds, for circuits); blocks before it count as passed, whether done or skipped.
+export function workoutTimeline(active, now = Date.now()) {
+  const blocks = routineOf(active).blocks;
+  let start = 0;
+  const segments = blocks.map((block, i) => {
+    const secs = Math.max(30, blockDuration(block));
+    const seg = { index: i, start, secs, module: block.module ?? null, status: active.results[i].status };
+    start += secs;
+    return seg;
+  });
+  const cur = segments[active.block];
+  const block = blocks[active.block];
+  let into = 0;
+  if (block.kind === 'circuit') {
+    into = Math.min(1, active.results[active.block].rounds / block.rounds) * cur.secs;
+  } else {
+    const elapsed = routineElapsed(active, now);
+    if (elapsed != null) into = clamp(elapsed - READY_SECS, 0, cur.secs);
+  }
+  return { segments, total: start, position: cur.start + into };
+}
+
+// An exercise cue as numbered steps: one per sentence.
+export function howToSteps(cue) {
+  return cue.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
 }

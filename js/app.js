@@ -11,6 +11,7 @@ import {
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
   INTENSITY_RANGE, intensityOf, applyIntensity, intensify, FEELINGS, feelingOf, intensityAdvice, rateSession,
   trainingHistory, dayKey, effectiveProfile,
+  workoutTimeline, howToSteps,
   levelFor, GROUP_FEELINGS, trainedGroups, rateGroup, groupAdvice, answerGroupAdvice, BACKUP_EVERY, workoutsSinceBackup,
 } from './logic.js';
 
@@ -464,30 +465,73 @@ function itemList(block, current, swap) {
   }).join('')}</ul>`;
 }
 
+// The workout screen: the timeline of the whole workout on the left; on the right the block,
+// a big timer (tap to stop / restart), what's next, and how to do the exercise.
 function renderRoutine() {
   const a = state.activeRoutine;
   const rt = routineOf(a);
   const block = rt.blocks[a.block];
   const isLast = a.block === rt.blocks.length - 1;
-  const pills = rt.blocks.map((b, i) => `
-    <button class="pill ${i === a.block ? 'active' : ''} ${a.results[i].status === 'done' ? 'done' : ''}" data-action="rt-goto" data-i="${i}">
-      ${i + 1}. ${esc(blockName(b))}${a.results[i].status === 'done' ? ' <small>✓</small>' : ''}
-    </button>`).join('');
   const phases = blockPhases(block);
+  const name = state.settings.name;
   return `
-    <header class="page-head row between">
-      <div>
-        <h1>${esc(a.name)}</h1>
-        <p class="muted"><span data-tick="rt-elapsed">${formatDuration(Date.now() - a.startedAt)}</span> elapsed</p>
+    <div class="player">
+      ${timelineBar(a)}
+      <div class="stage">
+        <header class="stage-head row between">
+          <div>
+            <p class="eyebrow">${name ? `Let's go, ${esc(name)}` : 'Workout'} · <span data-tick="rt-elapsed">${formatDuration(Date.now() - a.startedAt)}</span></p>
+            <h1>${esc(a.name)}</h1>
+          </div>
+          <button class="btn ghost" data-action="rt-finish">Finish</button>
+        </header>
+        ${phases ? renderTimer(a, block, phases) : renderCircuit(a, block)}
+        <div class="row between">
+          ${isLast ? '<button class="btn text" data-action="rt-finish">Finish workout</button>' : '<button class="btn text" data-action="rt-next">Skip to next block →</button>'}
+          <button class="btn text danger" data-action="rt-discard">Discard</button>
+        </div>
       </div>
-      <button class="btn ghost" data-action="rt-finish">Finish</button>
-    </header>
-    <div class="pills">${pills}</div>
-    ${phases ? renderTimer(a, block, phases) : renderCircuit(a, block)}
-    <div class="row between">
-      ${isLast ? '<button class="btn text" data-action="rt-finish">Finish workout</button>' : '<button class="btn text" data-action="rt-next">Skip to next block →</button>'}
-      <button class="btn text danger" data-action="rt-discard">Discard workout</button>
     </div>`;
+}
+
+// One segment per block, its height by the block's length, coloured by its part of the skeleton;
+// the marker shows where you are. Tap a segment to go to that block.
+function timelineBar(a) {
+  const t = workoutTimeline(a);
+  const blocks = routineOf(a).blocks;
+  return `
+    <aside class="timeline" aria-label="Workout timeline">
+      <div class="tl-track">
+        ${t.segments.map((seg) => `
+          <button class="tl-seg part-${partOf(blocks[seg.index]) ?? 'none'} ${seg.index === a.block ? 'current' : ''} ${seg.status === 'done' ? 'done' : ''}"
+            style="flex-grow:${seg.secs}" data-action="rt-goto" data-i="${seg.index}"
+            aria-label="Block ${seg.index + 1}: ${esc(blockName(blocks[seg.index]))}${seg.status === 'done' ? ', done' : ''}">
+            <span>${seg.status === 'done' ? '✓' : seg.index + 1}</span>
+          </button>`).join('')}
+        <span class="tl-marker" data-tick="tl-marker" style="top:${(t.position / t.total) * 100}%"></span>
+      </div>
+    </aside>`;
+}
+
+// The schematic explanation of one exercise: steps, muscles, equipment, band note.
+function howTo(item, label = 'How to') {
+  const ex = EXERCISES[item.ex];
+  const needs = (ex.needs ?? []).map((k) => EQUIPMENT.find((e) => e.id === k)?.name).filter(Boolean);
+  return `
+    <section class="howto">
+      <p class="eyebrow">${esc(label)} · ${esc(ex.name)}</p>
+      <ol>${howToSteps(ex.cue).map((step) => `<li>${esc(step)}</li>`).join('')}</ol>
+      ${ex.main ? `<p class="small"><b>Works:</b> ${esc(ex.main)}${ex.secondary ? ` <span class="muted">· also ${esc(ex.secondary)}</span>` : ''}</p>` : ''}
+      ${needs.length ? `<p class="small muted">Needs: ${esc(needs.join(' or '))}</p>` : ''}
+      ${item.note ? `<p class="small band-note">${esc(item.note)}</p>` : ''}
+    </section>`;
+}
+
+// What comes after the current phase, e.g. "Rest 10s → Push-up".
+function upNext(phases, index) {
+  const next = phases.slice(index + 1, index + 3);
+  if (!next.length) return 'Last one!';
+  return next.map((p) => (p.kind === 'rest' ? `Rest ${p.secs}s` : p.item ? EXERCISES[p.item.ex].name : `Round ${p.round}`)).join(' → ');
 }
 
 function blockHeader(a, block) {
@@ -552,16 +596,20 @@ function renderTimer(a, block, phases) {
   const elapsed = routineElapsed(a);
   const total = phases.reduce((sum, p) => sum + p.secs, 0);
   const rounds = blockRounds(block);
+  const whole = block.kind === 'amrap' || block.kind === 'emom'; // the whole list is one round
 
   if (elapsed == null) {
     return `
       <article class="card timer">
         ${blockHeader(a, block)}
+        <button class="big-clock" data-action="rt-start" aria-label="Start block">
+          <span class="clock">${formatClock(total - phases[0].secs)}</span>
+          <span class="hint">Tap to start</span>
+        </button>
         ${itemList(block, null, { scope: 'active', b: a.block })}
-        <div class="clock">${formatClock(total - phases[0].secs)}</div>
         ${timingEditor(a, block)}
-        <button class="btn primary big full" data-action="rt-start">Start block</button>
-      </article>`;
+      </article>
+      ${howTo(block.items[0], whole ? 'First' : 'First up')}`;
   }
 
   const pos = phaseAt(phases, elapsed);
@@ -579,34 +627,33 @@ function renderTimer(a, block, phases) {
   const p = pos.phase;
   let label;
   let sub = rounds ? `Round ${p.round} of ${rounds}` : '';
-  if (p.kind === 'ready') {
-    label = 'Get ready';
-    const first = block.items[0];
-    if (block.kind === 'interval') sub = `First: ${EXERCISES[first.ex].name}`;
-  } else if (p.kind === 'rest') {
-    label = 'Rest';
-    sub += ` · next: ${EXERCISES[p.next.ex].name}`;
-  } else if (block.kind === 'interval') {
-    label = EXERCISES[p.item.ex].name + (amountOf(p.item) && p.item.secs == null ? ` · ${amountOf(p.item)}` : '');
-  } else {
-    label = block.kind === 'amrap' ? 'Go!' : `Round ${p.round}`;
-  }
+  if (p.kind === 'ready') label = 'Get ready';
+  else if (p.kind === 'rest') label = 'Rest';
+  else if (block.kind === 'interval') label = EXERCISES[p.item.ex].name + (amountOf(p.item) && p.item.secs == null ? ` · ${amountOf(p.item)}` : '');
+  else label = block.kind === 'amrap' ? 'As many rounds as you can' : `Round ${p.round}: do the list`;
+  if (block.kind === 'amrap') sub = `${a.results[a.block].rounds} rounds so far`;
+  // During work: this exercise; during rest or get-ready: the next one, to prepare.
+  const focus = p.kind === 'work' ? p.item : p.kind === 'rest' ? p.next : block.items[0];
   const paused = a.pausedAt != null;
   return `
     <article class="card timer phase-${p.kind}">
       ${blockHeader(a, block)}
       <div class="phase-label">${esc(label)}</div>
-      <div class="clock" data-tick="rt-clock">${formatClock(pos.remaining)}</div>
+      <button class="big-clock ${paused ? 'paused' : ''}" data-action="${paused ? 'rt-resume' : 'rt-pause'}" aria-label="${paused ? 'Resume' : 'Stop'}">
+        <span class="clock" data-tick="rt-clock">${formatClock(pos.remaining)}</span>
+        <span class="hint">${paused ? 'Stopped · tap to restart' : 'Tap to stop'}</span>
+      </button>
       <div class="bar"><span data-tick="rt-bar" style="width:${(pos.into / p.secs) * 100}%"></span></div>
       <p class="muted center">${esc(sub)}</p>
+      <p class="up-next"><span class="muted">Next:</span> ${esc(whole ? (p.kind === 'ready' ? 'Go!' : `${formatClock(Math.max(0, total - elapsed))} left in the block`) : upNext(phases, pos.index))}</p>
       <div class="row gap center controls">
-        <button class="btn secondary" data-action="rt-restart" aria-label="Restart block">↺</button>
-        <button class="btn primary big grow" data-action="${paused ? 'rt-resume' : 'rt-pause'}">${paused ? 'Resume' : 'Pause'}</button>
+        <button class="btn secondary" data-action="rt-restart" aria-label="Restart block">↺ Restart</button>
         <button class="btn secondary" data-action="rt-skip" aria-label="Skip this phase">Skip ›</button>
       </div>
       ${block.kind === 'amrap' ? roundsCounter(a) : ''}
-      ${itemList(block, p.item)}
-    </article>`;
+      ${whole ? itemList(block) : ''}
+    </article>
+    ${whole ? '' : howTo(focus, p.kind === 'work' ? 'Now' : 'Next')}`;
 }
 
 function renderCircuit(a, block) {
@@ -624,7 +671,8 @@ function renderCircuit(a, block) {
         ${n ? '<button class="btn ghost" data-action="rt-rounds" data-d="-1">Undo</button>' : ''}
       </div>
       ${done ? nextButton(a) : ''}
-    </article>`;
+    </article>
+    ${block.items.length === 1 ? howTo(block.items[0]) : ''}`;
 }
 
 // ---------- progress ----------
@@ -700,6 +748,12 @@ function renderWelcome() {
       <p class="muted">Two quick questions, so every workout fits you. You can change them any time in Settings.</p>
     </header>
     <article class="card">
+      <label class="field name-field">
+        <span>Your name <span class="muted small">(optional)</span></span>
+        <input type="text" maxlength="30" autocomplete="given-name" value="${esc(state.settings.name)}" data-action="set-name" placeholder="e.g. Alex">
+      </label>
+    </article>
+    <article class="card">
       <h3>1 · Your level</h3>
       ${chips('pf-level', LEVELS, (id) => id === p.level, 'Level')}
       <p class="muted small">${esc(LEVELS.find((l) => l.id === p.level).blurb)}</p>
@@ -760,6 +814,10 @@ function renderSettings() {
     <h2>Training profile</h2>
     ${profileCard()}
     <article class="card">
+      <label class="field name-field">
+        <span>Your name</span>
+        <input type="text" maxlength="30" autocomplete="given-name" value="${esc(state.settings.name)}" data-action="set-name" placeholder="Optional">
+      </label>
       <label class="field toggle">
         <span>Beeps during workouts</span>
         <input type="checkbox" data-action="sound" ${state.settings.sound ? 'checked' : ''}>
@@ -878,6 +936,11 @@ function tickRoutine(now) {
   const a = state.activeRoutine;
   const elEl = document.querySelector('[data-tick="rt-elapsed"]');
   if (elEl) elEl.textContent = formatDuration(now - a.startedAt);
+  const marker = document.querySelector('[data-tick="tl-marker"]');
+  if (marker) {
+    const t = workoutTimeline(a, now);
+    marker.style.top = `${(t.position / t.total) * 100}%`;
+  }
   const block = routineOf(a).blocks[a.block];
   const phases = blockPhases(block);
   const elapsed = routineElapsed(a, now);
@@ -1025,6 +1088,7 @@ const actions = {
     update(() => (state.builder.finishers = [...fins, d.id].slice(-MAX_FINISHERS)));
   },
   'welcome-done': () => update(() => (state.onboarded = true)),
+  'set-name': (d, el) => update(() => (state.settings.name = el.value.trim().slice(0, 30))),
   'pf-toggle': () => { ui.profileOpen = !ui.profileOpen; render(); },
   'today-toggle': () => { ui.todayOpen = !ui.todayOpen; render(); },
   'today-equip': (d) => update(() => {

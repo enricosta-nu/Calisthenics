@@ -254,6 +254,42 @@ button:focus-visible, .btn:focus-within { outline: 2px solid var(--accent); outl
 .items .swap { padding: 4px 8px; margin: 0 0 6px; min-height: 36px; color: var(--accent); }
 .amt { display: inline-block; min-width: 44px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent); }
 
+/* workout screen: timeline + stage */
+.player { display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: start; }
+.timeline { position: sticky; top: calc(env(safe-area-inset-top) + 12px); height: calc(100vh - 120px - env(safe-area-inset-bottom)); }
+.tl-track { position: relative; height: 100%; display: flex; flex-direction: column; gap: 3px; }
+.tl-seg {
+  flex-basis: 0; min-height: 22px; border: 0; border-radius: 8px; padding: 0; cursor: pointer;
+  background: var(--surface-2); color: var(--muted); font: inherit; font-size: .7rem; font-weight: 700;
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 4px;
+}
+.tl-seg.part-opener { background: color-mix(in srgb, var(--accent) 35%, var(--surface-2)); }
+.tl-seg.part-skill { background: color-mix(in srgb, var(--good) 30%, var(--surface-2)); }
+.tl-seg.part-finisher { background: color-mix(in srgb, var(--bad) 35%, var(--surface-2)); }
+.tl-seg.done { opacity: .45; }
+.tl-seg.current { outline: 2px solid var(--text); outline-offset: 1px; color: var(--text); }
+.tl-marker {
+  position: absolute; left: -5px; right: -5px; height: 4px; margin-top: -2px; border-radius: 2px;
+  background: var(--text); box-shadow: 0 0 0 2px var(--bg); transition: top .25s linear; pointer-events: none;
+}
+.stage { min-width: 0; }
+.stage-head { margin-bottom: 12px; }
+.stage-head h1 { font-size: 1.4rem; }
+.big-clock {
+  all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; align-items: center;
+  width: 100%; margin: 6px 0 10px; padding: 8px 0 10px; border-radius: 20px; background: var(--surface-2);
+}
+.big-clock .clock { margin: 0; font-size: 4.6rem; line-height: 1.05; }
+.big-clock .hint { font-size: .8rem; color: var(--muted); font-weight: 600; }
+.big-clock.paused { outline: 2px dashed var(--muted); }
+.big-clock.paused .clock { opacity: .55; }
+.big-clock:focus-visible { outline: 2px solid var(--accent); }
+.up-next { margin: 4px 0 0; font-weight: 600; text-align: center; }
+.howto { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+.howto ol { margin: 6px 0 8px; padding-left: 20px; display: grid; gap: 4px; }
+.howto .band-note { color: var(--accent); font-weight: 600; }
+.name-field input { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); min-width: 0; width: 55%; }
+
 /* routine timer */
 .timer .clock { text-align: center; margin: 4px 0 8px; }
 .phase-label { text-align: center; font-size: 1.5rem; font-weight: 800; margin-top: 12px; }
