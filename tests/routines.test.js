@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ROUTINES, EXERCISES, routineById } from '../js/routines.js';
 import {
   READY_SECS, exercisesClash, blockClashes, blockRounds, timingFields, adjustTiming, applyOverrides, isWorkout, blockPhases, blockDuration, phaseAt, blockTitle, startRoutine, routineElapsed,
-  finishRoutine, normalizeState, defaultState, workoutTimeline, howToSteps,
+  finishRoutine, normalizeState, defaultState, workoutTimeline, howToSteps, startRecovery, recoveryLeft,
 } from '../js/logic.js';
 
 test('every routine item points at a known exercise', () => {
@@ -229,7 +229,9 @@ test('workoutTimeline: segments cover the workout and the marker follows the clo
   const a = startRoutine(rt, 1000);
   let tl = workoutTimeline(a, 5000);
   assert.equal(tl.segments.length, rt.blocks.length);
-  assert.equal(tl.total, tl.segments.reduce((n, x) => n + x.secs, 0));
+  assert.equal(tl.total, [...tl.segments, ...tl.gaps].reduce((n, x) => n + x.secs, 0));
+  assert.equal(tl.gaps.length, rt.blocks.length - 1); // 90s rest between blocks by default
+  assert.equal(tl.segments[1].start, tl.segments[0].secs + 90);
   assert.equal(tl.position, 0); // not started yet
   a.blockStartedAt = 10000;
   tl = workoutTimeline(a, 10000 + (READY_SECS + 20) * 1000);
@@ -253,4 +255,28 @@ test('workoutTimeline: untimed circuits advance by rounds', () => {
 
 test('howToSteps splits a cue into sentences', () => {
   assert.deepEqual(howToSteps('Hang tall. Pull your chest up!  Lower slowly?'), ['Hang tall.', 'Pull your chest up!', 'Lower slowly?']);
+});
+
+test('recovery between blocks: counts down, moves the marker, never after the last block', () => {
+  const a = startRoutine(routineById.a1, 1000, 0, 'a1', 90);
+  a.results[0].status = 'done';
+  assert.equal(startRecovery(a, 10000), true);
+  assert.equal(recoveryLeft(a, 10000 + 30000), 60);
+  const tl = workoutTimeline(a, 10000 + 30000);
+  assert.equal(tl.position, tl.segments[0].secs + 30);
+  a.recovery.pausedAt = 10000 + 30000; // stopped
+  assert.equal(recoveryLeft(a, 10000 + 99000), 60);
+  a.block = 3;
+  assert.equal(recoveryLeft(a, 0), null); // belongs to block 0 only
+  assert.equal(startRecovery(a, 0), false); // last block: no rest after it
+  const off = startRoutine(routineById.a1, 1000, 0, 'a1', 0);
+  assert.equal(startRecovery(off, 0), false);
+  assert.equal(workoutTimeline(off, 0).gaps.length, 0);
+});
+
+test('settings: rest between blocks, voice and vibration are kept and checked', () => {
+  const s = normalizeState({ settings: { recovery: 120, voice: false, vibrate: false } });
+  assert.equal(s.settings.recovery, 120);
+  assert.equal(s.settings.voice, false);
+  assert.equal(normalizeState({ settings: { recovery: 77 } }).settings.recovery, 90);
 });

@@ -11,7 +11,7 @@ import {
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
   INTENSITY_RANGE, intensityOf, applyIntensity, intensify, FEELINGS, feelingOf, intensityAdvice, rateSession,
   trainingHistory, dayKey, effectiveProfile,
-  workoutTimeline, howToSteps,
+  workoutTimeline, howToSteps, startRecovery, recoveryLeft, RECOVERY_OPTIONS,
   levelFor, GROUP_FEELINGS, trainedGroups, rateGroup, groupAdvice, answerGroupAdvice, BACKUP_EVERY, workoutsSinceBackup,
 } from './logic.js';
 import { figureSvg, animateFigures } from './figures.js';
@@ -512,10 +512,42 @@ function timelineBar(a) {
             aria-label="Block ${seg.index + 1}: ${esc(blockName(blocks[seg.index]))}${seg.status === 'done' ? ', done' : ''}">
             ${phaseStripes(blocks[seg.index])}
             <span>${seg.status === 'done' ? '✓' : seg.index + 1}</span>
-          </button>`).join('')}
+          </button>${gapAfter(t, seg.index)}`).join('')}
         <span class="tl-marker" data-tick="tl-marker" style="top:${(t.position / t.total) * 100}%"></span>
       </div>
     </aside>`;
+}
+
+// The rest between two blocks, as a hatched gap in the timeline.
+function gapAfter(t, i) {
+  const gap = t.gaps.find((g) => g.after === i);
+  return gap ? `<span class="tl-gap" style="flex-grow:${gap.secs}" title="Recovery ${gap.secs}s"></span>` : '';
+}
+
+// The rest after a block: a big clock (tap to stop / restart), what's next, +30s or start now.
+function recoveryPanel(a) {
+  const left = Math.max(0, recoveryLeft(a));
+  const r = a.recovery;
+  const paused = r.pausedAt != null;
+  const block = routineOf(a).blocks[a.block];
+  const next = routineOf(a).blocks[a.block + 1];
+  return `
+    <article class="card timer phase-rest">
+      <p class="eyebrow">Block ${a.block + 1} of ${routineOf(a).blocks.length} · done ✓</p>
+      <div class="phase-label">Recovery</div>
+      <button class="big-clock ${paused ? 'paused' : ''}" data-action="${paused ? 'rt-rec-resume' : 'rt-rec-pause'}" aria-label="${paused ? 'Resume' : 'Stop'}">
+        <span class="clock" data-tick="rt-recover">${formatClock(left)}</span>
+        <span class="hint">${paused ? 'Stopped · tap to restart' : 'Tap to stop'}</span>
+      </button>
+      <div class="bar"><span data-tick="rt-recover-bar" style="width:${((r.secs - left) / r.secs) * 100}%"></span></div>
+      <p class="up-next"><span class="muted">Next:</span> ${esc(blockTitle(next).startsWith(blockName(next)) ? blockTitle(next) : `${blockName(next)} · ${blockTitle(next)}`)}</p>
+      <div class="row gap center controls">
+        <button class="btn secondary" data-action="rt-rec-more">+30s</button>
+        <button class="btn primary" data-action="rt-rec-skip">Start now ›</button>
+      </div>
+      ${block.kind === 'amrap' ? roundsCounter(a) : ''}
+    </article>
+    ${howToCard(next.items[0], 'Next up')}`;
 }
 
 // Work and recovery inside a block, as stripes: lighter = recovery. Merges neighbours of the same kind.
@@ -664,6 +696,7 @@ function renderTimer(a, block, phases) {
   }
 
   const pos = phaseAt(phases, elapsed);
+  if (!pos.phase && recoveryLeft(a) != null) return recoveryPanel(a);
   if (!pos.phase) {
     return `
       <article class="card timer">
@@ -711,6 +744,7 @@ function renderCircuit(a, block) {
   const n = a.results[a.block].rounds;
   const target = block.rounds;
   const done = n >= target;
+  if (done && recoveryLeft(a) != null) return recoveryPanel(a);
   return `
     <article class="card">
       ${blockHeader(a, block)}
@@ -875,6 +909,11 @@ function renderSettings() {
       </label>
     </article>
     <article class="card">
+      <h3>Rest between blocks</h3>
+      <p class="muted small">A recovery countdown after each block; the next block then starts by itself.</p>
+      ${chips('set-recovery', RECOVERY_OPTIONS.map((v) => ({ id: v, name: recoveryName(v) })), (v) => v === state.settings.recovery, 'Rest between blocks')}
+    </article>
+    <article class="card">
       <h3>Your data</h3>
       <p class="muted small">Everything is stored on this device only. A backup is one small file: save it to iCloud Drive, Google Drive, Dropbox, or send it to yourself. On a new phone, restore it from that file.</p>
       <p class="small">${state.lastBackup
@@ -888,6 +927,8 @@ function renderSettings() {
     </article>
     <p class="muted small center">Calisthenics · works offline · add to your home screen to install.</p>`;
 }
+
+const recoveryName = (v) => (v === 0 ? 'Off' : v % 60 === 0 ? `${v / 60} min` : `${v}s`);
 
 const groupName = (mg) => FOCUS.find((f) => f.id === mg)?.name ?? mg;
 const levelName = (lv) => LEVELS.find((l) => l.id === lv).name;
@@ -993,6 +1034,20 @@ function tickRoutine(now) {
     const t = workoutTimeline(a, now);
     marker.style.top = `${(t.position / t.total) * 100}%`;
   }
+  const left = recoveryLeft(a, now);
+  if (left != null) {
+    if (left <= 0) return endRecovery();
+    const secLeft = Math.ceil(left);
+    if (secLeft <= 3 && secLeft !== ui.lastCount && a.recovery.pausedAt == null) {
+      ui.lastCount = secLeft;
+      play('count');
+    }
+    const clock = document.querySelector('[data-tick="rt-recover"]');
+    if (clock) clock.textContent = formatClock(left);
+    const bar = document.querySelector('[data-tick="rt-recover-bar"]');
+    if (bar) bar.style.width = `${((a.recovery.secs - left) / a.recovery.secs) * 100}%`;
+    return;
+  }
   const block = routineOf(a).blocks[a.block];
   const phases = blockPhases(block);
   const elapsed = routineElapsed(a, now);
@@ -1006,6 +1061,7 @@ function tickRoutine(now) {
     ui.lastCount = null;
     if (!pos.phase && a.results[a.block].status !== 'done') {
       a.results[a.block].status = 'done';
+      if (!silent) startRecovery(a, now);
       save();
     }
     if (!silent) {
@@ -1061,11 +1117,28 @@ function beginRoutine(base, step = 0, key = base.id) {
   unlockAudio();
   ui.returnTab = ui.tab === 'train' ? ui.returnTab : ui.tab;
   ui.tab = 'train';
-  update(() => (state.activeRoutine = startRoutine(routine, Date.now(), step, key)));
+  update(() => (state.activeRoutine = startRoutine(routine, Date.now(), step, key, state.settings.recovery)));
+  window.scrollTo(0, 0);
+}
+
+// Rest is over (or skipped): on to the next block, its timer starting by itself.
+function endRecovery() {
+  const a = state.activeRoutine;
+  a.recovery = null;
+  a.block = Math.min(a.block + 1, a.results.length - 1);
+  resetBlockTimer(a);
+  if (blockPhases(routineOf(a).blocks[a.block])) {
+    a.blockStartedAt = Date.now();
+    if (a.results[a.block].status === 'todo') a.results[a.block].status = 'partial';
+  }
+  play('work');
+  save();
+  render();
   window.scrollTo(0, 0);
 }
 
 function resetBlockTimer(a) {
+  a.recovery = null;
   a.blockStartedAt = null;
   a.pausedAt = null;
   a.pausedMs = 0;
@@ -1241,8 +1314,21 @@ const actions = {
     const res = a.results[a.block];
     const block = routineOf(a).blocks[a.block];
     res.rounds = Math.max(0, res.rounds + Number(d.d));
-    if (block.kind === 'circuit') res.status = res.rounds >= block.rounds ? 'done' : res.rounds ? 'partial' : 'todo';
+    if (block.kind === 'circuit') {
+      const was = res.status;
+      res.status = res.rounds >= block.rounds ? 'done' : res.rounds ? 'partial' : 'todo';
+      if (res.status === 'done' && was !== 'done') startRecovery(a);
+      if (res.status !== 'done') a.recovery = null;
+    }
   }),
+  'rt-rec-pause': () => update(() => (state.activeRoutine.recovery.pausedAt = Date.now())),
+  'rt-rec-resume': () => update(() => {
+    const r = state.activeRoutine.recovery;
+    r.pausedMs += Date.now() - r.pausedAt;
+    r.pausedAt = null;
+  }),
+  'rt-rec-more': () => update(() => (state.activeRoutine.recovery.secs += 30)),
+  'rt-rec-skip': () => endRecovery(),
   'rt-finish': () => {
     const a = state.activeRoutine;
     if (a.results.some((r) => r.status !== 'done') && !confirm('Some blocks are not done yet. Finish anyway?')) return;
@@ -1267,6 +1353,10 @@ const actions = {
     update(() => state.sessions.splice(Number(d.i), 1));
   },
   sound: (d, el) => update(() => (state.settings.sound = el.checked)),
+  'set-recovery': (d) => update(() => {
+    state.settings.recovery = Number(d.id);
+    if (state.activeRoutine) state.activeRoutine.recoverSecs = Number(d.id); // also for the workout in progress
+  }),
   // Share sheet where available (save to Files / iCloud Drive / Drive / Dropbox / a message);
   // otherwise a download. Only counted as backed up when the user didn't cancel.
   backup: async () => {

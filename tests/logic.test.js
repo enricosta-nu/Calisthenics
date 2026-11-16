@@ -59,7 +59,7 @@ test('normalizeState repairs bad input and drops what no longer exists', () => {
   assert.equal(s.sessions.length, 2);
   assert.equal('levels' in s, false);
   assert.equal('active' in s, false);
-  assert.deepEqual(s.settings, { sound: false, suggestMinutes: 60, name: '' }); // 90 min no longer exists
+  assert.deepEqual(s.settings, { sound: false, suggestMinutes: 60, name: '', recovery: 90, voice: true, vibrate: true }); // 90 min no longer exists
 });
 
 test('formatters', () => {

@@ -24,7 +24,9 @@ export function defaultState() {
     today: null, // { date: 'YYYY-MM-DD', equipment: [...] } equipment for today only
     groupFeelings: {}, // { muscleGroup: [{ v: 1 easy | 2 ok | 3 hard, level, session }] } latest first, see rateGroup
     lastBackup: null, // { at, sessions } when the last backup was made, and how many workouts it had
-    settings: { sound: true, suggestMinutes: 60, name: '' }, // name: optional, to greet the user
+    // name: optional, to greet the user · recovery: seconds of rest between blocks ·
+    // voice: spoken cues · vibrate: buzz on each change of phase
+    settings: { sound: true, suggestMinutes: 60, name: '', recovery: 90, voice: true, vibrate: true },
   };
 }
 
@@ -55,6 +57,9 @@ export function normalizeState(raw) {
       sound: typeof raw.settings?.sound === 'boolean' ? raw.settings.sound : base.settings.sound,
       suggestMinutes: SUGGEST_MINUTES.includes(raw.settings?.suggestMinutes) ? raw.settings.suggestMinutes : base.settings.suggestMinutes,
       name: typeof raw.settings?.name === 'string' ? raw.settings.name.trim().slice(0, 30) : '',
+      recovery: RECOVERY_OPTIONS.includes(raw.settings?.recovery) ? raw.settings.recovery : base.settings.recovery,
+      voice: typeof raw.settings?.voice === 'boolean' ? raw.settings.voice : base.settings.voice,
+      vibrate: typeof raw.settings?.vibrate === 'boolean' ? raw.settings.vibrate : base.settings.vibrate,
     },
   };
 }
@@ -185,6 +190,8 @@ export function formatClock(seconds) {
 // ---------- personal routines (timed blocks) ----------
 
 export const READY_SECS = 10;
+// Rest between blocks, in seconds (0 = off).
+export const RECOVERY_OPTIONS = [0, 30, 60, 90, 120, 180];
 
 const itemWork = (block, it) => it.secs ?? block.work;
 
@@ -428,8 +435,10 @@ export function applyOverrides(routine, overrides = {}) {
 
 // `key` is what ratings and intensity are remembered under: the routine id, or 'suggest' /
 // 'create' for generated workouts (new every time, so the section is what's remembered).
-export function startRoutine(routine, now = Date.now(), intensity = 0, key = routine.id) {
+export function startRoutine(routine, now = Date.now(), intensity = 0, key = routine.id, recoverSecs = 90) {
   return {
+    recoverSecs, // rest between blocks
+    recovery: null, // { from, startedAt, secs, pausedAt, pausedMs } while resting after block `from`
     id: routine.id,
     key,
     name: routine.name,
@@ -632,15 +641,27 @@ export function workoutsSinceBackup(state) {
 // rounds, for circuits); blocks before it count as passed, whether done or skipped.
 export function workoutTimeline(active, now = Date.now()) {
   const blocks = routineOf(active).blocks;
+  const rest = active.recoverSecs ?? 0;
   let start = 0;
+  const gaps = [];
   const segments = blocks.map((block, i) => {
     const secs = Math.max(30, blockDuration(block));
     const seg = { index: i, start, secs, module: block.module ?? null, status: active.results[i].status };
     start += secs;
+    if (rest && i < blocks.length - 1) {
+      gaps.push({ after: i, start, secs: rest });
+      start += rest;
+    }
     return seg;
   });
   const cur = segments[active.block];
   const block = blocks[active.block];
+  const left = recoveryLeft(active, now);
+  if (left != null) {
+    const gap = gaps.find((g) => g.after === active.block);
+    const secs = gap?.secs ?? 0;
+    return { segments, gaps, total: start, position: cur.start + cur.secs + clamp(secs - left, 0, secs) };
+  }
   let into = 0;
   if (block.kind === 'circuit') {
     into = Math.min(1, active.results[active.block].rounds / block.rounds) * cur.secs;
@@ -648,7 +669,24 @@ export function workoutTimeline(active, now = Date.now()) {
     const elapsed = routineElapsed(active, now);
     if (elapsed != null) into = clamp(elapsed - READY_SECS, 0, cur.secs);
   }
-  return { segments, total: start, position: cur.start + into };
+  return { segments, gaps, total: start, position: cur.start + into };
+}
+
+// ---------- recovery between blocks ----------
+
+// Start the rest after the current block, unless it's the last one or rest is off.
+export function startRecovery(active, now = Date.now()) {
+  const secs = active.recoverSecs ?? 0;
+  if (!secs || active.block >= active.results.length - 1) return false;
+  active.recovery = { from: active.block, startedAt: now, secs, pausedAt: null, pausedMs: 0 };
+  return true;
+}
+
+// Seconds of rest left (may go below 0 when it's over), or null when not resting.
+export function recoveryLeft(active, now = Date.now()) {
+  const r = active.recovery;
+  if (!r || r.from !== active.block) return null;
+  return r.secs - ((r.pausedAt ?? now) - r.startedAt - r.pausedMs) / 1000;
 }
 
 // An exercise cue as numbered steps: one per sentence.
