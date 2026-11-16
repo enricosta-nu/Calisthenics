@@ -293,8 +293,8 @@ function pickMuscle(mg, types, ctx, exclude, neighbours = [], extra = () => true
     id = pool[i][0];
     ctx.used[id] = (ctx.used[id] ?? 0) + 1;
     exclude.add(id);
-  } else if (mg === 'back' && types.includes('hold') && !types.includes('reps')) {
-    // No bar for a back hold: a core hold instead, so legs stay in the finisher.
+  } else if (mg === 'back') {
+    // Nothing to pull on (no bar, no low bar): core instead, so legs stay in the finisher.
     return pickMuscle('core', types, ctx, exclude, neighbours, extra);
   } else {
     id = pickExercise(MG_SLOT[mg], types, ctx, exclude, new Set(), neighbours);
@@ -362,7 +362,9 @@ const BUILDERS = {
     const ex = new Set();
     const ids = [pickMuscle(a, ['reps'], ctx, ex, [], openerMove)];
     ids.push(pickMuscle(b, ['reps'], ctx, ex, [ids[0]], openerMove));
-    ids.push(pickMuscle('core', ['reps'], ctx, ex, [ids[1], ids[0]]));
+    // Without a bar the pull slot is already core: shoulders instead.
+    const third = EXERCISES[ids[0]].mg === 'core' ? 'shoulders' : 'core';
+    ids.push(pickMuscle(third, ['reps'], ctx, ex, [ids[1], ids[0]]));
     endBlock(ctx, ids);
     return circuit(rounds, ids.map((id) => dosed(id, ctx)));
   },

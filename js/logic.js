@@ -1,5 +1,6 @@
 // Pure state logic: no DOM access, so it can be unit-tested with `node --test`.
 import { routineById, EXERCISES } from './routines.js';
+import { t, defaultLang } from './i18n.js';
 import {
   MODULES, FOCUS, SUGGEST_MINUTES, CREATE_MINUTES, SKILL_BLOCKS, MAX_FINISHERS, DEFAULT_BUILDER, LEVELS, EQUIPMENT,
   DEFAULT_PROFILE,
@@ -26,7 +27,7 @@ export function defaultState() {
     lastBackup: null, // { at, sessions } when the last backup was made, and how many workouts it had
     // name: optional, to greet the user · recovery: seconds of rest between blocks ·
     // voice: spoken cues · vibrate: buzz on each change of phase
-    settings: { sound: true, suggestMinutes: 60, name: '', recovery: 90, voice: true, vibrate: true },
+    settings: { sound: true, suggestMinutes: 60, name: '', recovery: 90, voice: true, vibrate: true, lang: defaultLang() },
   };
 }
 
@@ -60,6 +61,7 @@ export function normalizeState(raw) {
       recovery: RECOVERY_OPTIONS.includes(raw.settings?.recovery) ? raw.settings.recovery : base.settings.recovery,
       voice: typeof raw.settings?.voice === 'boolean' ? raw.settings.voice : base.settings.voice,
       vibrate: typeof raw.settings?.vibrate === 'boolean' ? raw.settings.vibrate : base.settings.vibrate,
+      lang: ['en', 'it'].includes(raw.settings?.lang) ? raw.settings.lang : base.settings.lang,
     },
   };
 }
@@ -265,11 +267,11 @@ export function phaseAt(phases, elapsed) {
 export function blockTitle(block) {
   switch (block.kind) {
     case 'amrap': return `AMRAP ${block.minutes} min`;
-    case 'emom': return block.every === 60 ? `EMOM ${block.rounds} min` : `Every ${formatClock(block.every)} × ${block.rounds}`;
-    case 'circuit': return block.rounds > 1 ? `${block.rounds} rounds` : 'At your pace';
+    case 'emom': return block.every === 60 ? `EMOM ${block.rounds} min` : t('Every {time} × {n}', { time: formatClock(block.every), n: block.rounds });
+    case 'circuit': return block.rounds > 1 ? t('{n} rounds', { n: block.rounds }) : t('At your pace');
     default: {
       const rest = block.rest ? ` / ${block.rest}s` : '';
-      const prefix = block.title ? `${block.title} · ` : '';
+      const prefix = block.title ? `${t(block.title)} · ` : '';
       if (block.minutes) return `${prefix}${block.minutes} min · ${block.work}s${rest}`;
       // A single pass through a list reads better as "6 × 45s" than "1 × 45s".
       const count = block.rounds === 1 ? block.items.length : block.rounds;
@@ -283,8 +285,8 @@ export function blockName(block) {
   const names = block.items.map((it) => EXERCISES[it.ex].name);
   if (block.kind === 'amrap') return `AMRAP ${block.minutes}'`;
   if (block.kind === 'emom') return 'EMOM';
-  if (block.kind === 'circuit') return names.length === 1 ? names[0] : 'Circuit';
-  if (block.title) return block.title;
+  if (block.kind === 'circuit') return names.length === 1 ? names[0] : t('Circuit');
+  if (block.title) return t(block.title);
   return names.join(' + ');
 }
 
@@ -461,9 +463,9 @@ export function routineElapsed(active, now = Date.now()) {
 
 export function resultText(block, res) {
   if (block.kind === 'amrap' || block.kind === 'circuit') {
-    if (res.rounds) return `${res.rounds} round${res.rounds === 1 ? '' : 's'}`;
+    if (res.rounds) return t(res.rounds === 1 ? '{n} round' : '{n} rounds', { n: res.rounds });
   }
-  return { done: 'done', partial: 'partial', todo: 'skipped' }[res.status];
+  return t({ done: 'done', partial: 'partial', todo: 'skipped' }[res.status]);
 }
 
 export function finishRoutine(state, now = Date.now()) {

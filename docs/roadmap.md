@@ -60,3 +60,5 @@ done or skipped, intensity, overall rating, and the per-muscle-group rating.
 - Intensity, overall and per-group ratings with suggestions the user decides on
 - Variety across sessions, recovery after hard days, swap an exercise
 - Progress tab, first-launch welcome, backup and restore through the share menu
+- Workout screen: timeline with work / recovery, big tap-to-stop clock, animated exercise figures with tips
+- Recovery between blocks (90s), spoken cues, vibration switch, English + Italian

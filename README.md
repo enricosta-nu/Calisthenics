@@ -16,6 +16,10 @@ A small, offline-first bodyweight training app. It runs in the browser and can b
 - **Variety and recovery**: new workouts favour exercises you haven't done in your last three workouts, and go lighter on muscle groups you worked hard in the last 36 hours.
 - **Guided timer** for every block: get-ready countdown, work and rest phases, beeps and a 3-2-1 countdown, pause, skip and restart. It picks up where you left off after a reload.
 - **Workout screen**: a timeline down the left shows the whole workout, coloured by part, with work and recovery as stripes inside each block and a marker for where you are (tap a block to jump to it). A big clock you tap to stop and restart. Below it, a card with an animated figure of the current exercise (or the next one, during rest) showing the main muscles in red; tap it for the full explanation: steps, how to stay safe, and how to get the most out of it. It greets you by name if you set one.
+- **Recovery between blocks**: 90 seconds by default (off, 30s to 3 min in Settings), with a countdown you can stop, +30s, or start the next block now; the next block then starts by itself.
+- **Spoken cues and vibration**: the phone's voice announces each exercise, rest and what's next; both can be switched off in Settings.
+- **English and Italian**: everything, exercises and tips included; picked from the phone's language and changeable on the welcome screen and in Settings.
+- **Variety inside a workout**: an exercise isn't repeated across blocks while there are alternatives (one level up is allowed before repeating, never at the bar or for upside-down holds).
 - **Adjustable timings**: before a block starts, change its rounds, work, rest or total time. Changes to saved workouts are remembered.
 - **Tabata** means 20s on / 10s off: a circuit is 8 intervals (4 min), and a Tabata is 3 circuits (12 min), cycling through the exercises. Shorter lists repeat within a circuit. Workouts can set other timings.
 - **Progress**: workouts, this week and week streak; how your training spread across muscle groups in the last 4 weeks (with a hint when one falls behind); every exercise in the app by muscle group, with how often and when you last did it; and how your workouts felt.
@@ -49,6 +53,7 @@ npm test           # node --test, covers the pure logic in js/logic.js
 | `js/options.js` | The durations, block kinds and focus options offered |
 | `js/figures.js` | Animated exercise pictograms: key poses, muscle highlights, the drawing and animation loop |
 | `js/coaching.js` | Each exercise's steps, safety tips and tips to get the most out of it |
+| `js/i18n.js`, `js/i18n-it*.js`, `js/coaching-it.js` | Languages: the translation function and the Italian texts |
 | `js/logic.js` | Pure state logic: block timers, rotation rules, intensity, ratings, history and stats |
 | `js/app.js` | UI rendering, timers and event handling |
 | `styles.css` | Styles (light and dark mode) |

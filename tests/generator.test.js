@@ -304,3 +304,15 @@ test('beginners keep the frog stand for the handstand block, not the skill inter
     }
   }
 });
+
+test('without a bar, legs still stay out of the opener and the skill section', () => {
+  const LEGS = (id) => EXERCISES[id].mg === 'legs';
+  for (const minutes of [45, 60, 75]) {
+    for (const seed of SEEDS) {
+      const w = generateWorkout({ minutes, plan: suggestPlan(minutes, rng(seed)), seed, profile: { level: 1, equipment: [] } });
+      for (const b of w.blocks.filter((x) => /^(opener|skill)/.test(x.module ?? ''))) {
+        assert.ok(!b.items.some((it) => LEGS(it.ex)), `${minutes} min seed ${seed} ${b.module}: ${b.items.map((x) => x.ex)}`);
+      }
+    }
+  }
+});
