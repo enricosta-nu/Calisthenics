@@ -82,6 +82,55 @@ function unlockAudio() {
   } catch {
     /* audio not available */
   }
+  // iPhones only let a page speak after it has spoken inside a tap once.
+  if (!unlockAudio.spoke && 'speechSynthesis' in window) {
+    unlockAudio.spoke = true;
+    speechSynthesis.speak(new SpeechSynthesisUtterance(' '));
+  }
+}
+
+// Spoken cues, in the phone's own voice.
+function speak(text) {
+  if (!state.settings.voice || !('speechSynthesis' in window) || !text) return;
+  try {
+    speechSynthesis.cancel(); // the newest cue wins
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = speechLang();
+    u.rate = 1.05;
+    speechSynthesis.speak(u);
+  } catch {
+    /* speech not available */
+  }
+}
+const speechLang = () => 'en-US';
+
+const secondsSpoken = (n) => (n % 60 === 0 ? `${n / 60} minute${n === 60 ? '' : 's'}` : n > 60 ? `${Math.floor(n / 60)} minute ${n % 60} seconds` : `${n} seconds`);
+const exSpoken = (it) => {
+  const ex = EXERCISES[it.ex];
+  return it.reps != null ? `${it.reps} ${ex.name}` : it.text ? `${it.text} ${ex.name}` : ex.name;
+};
+
+// What to say when a phase starts.
+function phaseCue(block, phase, a) {
+  if (phase.kind === 'rest') return `Rest. Next: ${exSpoken(phase.next)}`;
+  if (phase.kind !== 'work') return '';
+  if (block.kind === 'amrap') return 'Go! As many rounds as you can';
+  if (block.kind === 'emom') return phase.round === 1 ? `Go! ${block.items.map(exSpoken).join(', ')}` : `Round ${phase.round}`;
+  return EXERCISES[phase.item.ex].name;
+}
+
+// When a block starts: what comes first.
+function blockStartCue(a) {
+  const block = routineOf(a).blocks[a.block];
+  return `Get ready. ${block.kind === 'interval' ? exSpoken(block.items[0]) : blockName(block)}`;
+}
+
+function blockDoneCue(a) {
+  if (a.recovery) {
+    const next = routineOf(a).blocks[a.block + 1];
+    return `Block done. Recover ${secondsSpoken(a.recovery.secs)}. Next: ${blockName(next)}`;
+  }
+  return a.block === a.results.length - 1 ? 'Last block done. Great work!' : 'Block done';
 }
 
 // notes: [frequency, offset seconds, duration seconds]
@@ -94,7 +143,7 @@ const SOUNDS = {
 
 function play(name) {
   const { notes, vibrate } = SOUNDS[name];
-  if (navigator.vibrate) navigator.vibrate(vibrate);
+  if (state.settings.vibrate && navigator.vibrate) navigator.vibrate(vibrate);
   if (!state.settings.sound) return;
   try {
     unlockAudio();
@@ -907,6 +956,14 @@ function renderSettings() {
         <span>Beeps during workouts</span>
         <input type="checkbox" data-action="sound" ${state.settings.sound ? 'checked' : ''}>
       </label>
+      <label class="field toggle">
+        <span>Spoken cues <span class="muted small">· "Rest. Next: push-up"</span></span>
+        <input type="checkbox" data-action="voice" ${state.settings.voice ? 'checked' : ''}>
+      </label>
+      <label class="field toggle">
+        <span>Vibration <span class="muted small">· not on iPhone</span></span>
+        <input type="checkbox" data-action="vibrate" ${state.settings.vibrate ? 'checked' : ''}>
+      </label>
     </article>
     <article class="card">
       <h3>Rest between blocks</h3>
@@ -1067,6 +1124,7 @@ function tickRoutine(now) {
     if (!silent) {
       if (!pos.phase) play('done');
       else if (pos.phase.kind !== 'ready') play(pos.phase.kind);
+      speak(pos.phase ? phaseCue(block, pos.phase, a) : blockDoneCue(a));
     }
     render();
     return;
@@ -1132,6 +1190,7 @@ function endRecovery() {
     if (a.results[a.block].status === 'todo') a.results[a.block].status = 'partial';
   }
   play('work');
+  speak(blockStartCue(a));
   save();
   render();
   window.scrollTo(0, 0);
@@ -1276,6 +1335,7 @@ const actions = {
     resetBlockTimer(a);
     a.blockStartedAt = Date.now();
     if (a.results[a.block].status === 'todo') a.results[a.block].status = 'partial';
+    speak(blockStartCue(a));
     save();
     render();
   },
@@ -1317,7 +1377,10 @@ const actions = {
     if (block.kind === 'circuit') {
       const was = res.status;
       res.status = res.rounds >= block.rounds ? 'done' : res.rounds ? 'partial' : 'todo';
-      if (res.status === 'done' && was !== 'done') startRecovery(a);
+      if (res.status === 'done' && was !== 'done') {
+        startRecovery(a);
+        speak(blockDoneCue(a));
+      }
       if (res.status !== 'done') a.recovery = null;
     }
   }),
@@ -1353,6 +1416,14 @@ const actions = {
     update(() => state.sessions.splice(Number(d.i), 1));
   },
   sound: (d, el) => update(() => (state.settings.sound = el.checked)),
+  voice: (d, el) => {
+    update(() => (state.settings.voice = el.checked));
+    if (el.checked) { unlockAudio(); speak("Voice on. Let's train!"); }
+  },
+  vibrate: (d, el) => {
+    update(() => (state.settings.vibrate = el.checked));
+    if (el.checked && navigator.vibrate) navigator.vibrate(150);
+  },
   'set-recovery': (d) => update(() => {
     state.settings.recovery = Number(d.id);
     if (state.activeRoutine) state.activeRoutine.recoverSecs = Number(d.id); // also for the workout in progress
