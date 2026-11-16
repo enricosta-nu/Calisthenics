@@ -176,8 +176,9 @@ test('only exercises that fit the level and equipment are picked', () => {
           const e = EXERCISES[it.ex];
           if (!e.g.length) continue; // warm-up, stretches
           const where = `L${profile.level} [${profile.equipment}] ${it.ex}`;
-          assert.ok(usable(e, profile), where);
-          if (e.level > profile.level) assert.equal(it.note, 'with resistance band', where);
+          // One level up is allowed (never at the bar) to avoid repeating an exercise in the workout.
+          assert.ok(usable(e, profile, true), where);
+          if (e.level > profile.level && e.needs.includes('bar')) assert.equal(it.note, 'with resistance band', where);
         }
         assert.deepEqual(blockClashes(b), [], `L${profile.level} [${profile.equipment}] ${b.items.map((x) => x.ex)}`);
       }
@@ -278,4 +279,28 @@ test('swap keeps the kind of amount: reps stay reps (scaled), seconds stay secon
   // a beginner with a band gets the band note on a swapped-in level-2 exercise
   const beginner = { level: 1, equipment: ['bar', 'band'] };
   assert.equal(swapItem(timed, 0, 'pull-up', beginner).items[0].note, 'with resistance band');
+});
+
+test('an exercise is not repeated across blocks when there are alternatives', () => {
+  const profile = { level: 2, equipment: ['bar', 'lowbar', 'dip', 'parallettes'] };
+  for (const minutes of [45, 60, 75]) {
+    for (const seed of SEEDS) {
+      const w = generateWorkout({ minutes, plan: suggestPlan(minutes, rng(seed)), seed, profile });
+      const seen = new Map();
+      w.blocks.forEach((b, i) => b.module && b.items.forEach((it) => {
+        assert.ok(!seen.has(it.ex) || seen.get(it.ex) === i, `${minutes} min, seed ${seed}: ${it.ex} in two blocks`);
+        seen.set(it.ex, i);
+      }));
+    }
+  }
+});
+
+test('beginners keep the frog stand for the handstand block, not the skill intervals', () => {
+  const profile = { level: 1, equipment: [] };
+  for (const seed of SEEDS) {
+    const w = generateWorkout({ minutes: 60, plan: suggestPlan(60, rng(seed)), seed, profile });
+    for (const b of w.blocks.filter((x) => x.module === 'skill-intervals')) {
+      assert.ok(!b.items.some((it) => it.ex === 'frog-stand'), `seed ${seed}: ${b.items.map((x) => x.ex)}`);
+    }
+  }
 });

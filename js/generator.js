@@ -172,13 +172,17 @@ function freshness(id, e, ctx) {
 // Can this user do this exercise? It must be in the approved reference, the user needs one of
 // its equipment options, and it must be at or below their level. A beginner with a band can
 // also get the band-assisted version of a level-2 exercise that allows one (pull-up, dip…).
-export function usable(e, profile) {
+export function usable(e, profile, stretch = false) {
   if (!e.mg) return false;
   const has = (k) => profile.equipment.includes(k);
   if (e.needs.length && !e.needs.some(has)) return false;
   const level = levelFor(profile, e.mg);
-  return e.level <= level || (bandHelps(e, profile) && e.level === level + 1);
+  return e.level <= level || (bandHelps(e, profile) && e.level === level + 1) || (stretch && e.level === level + 1 && stretchable(e));
 }
+
+// One level up is allowed only to avoid repeating an exercise in a workout, and never for moves
+// at the high bar or upside-down holds, which need the strength or skill first.
+const stretchable = (e) => !e.needs.includes('bar') && !(e.g[0] === 'handstand' && e.t === 'hold');
 
 // Levels are per muscle group (levelFor): a beginner at back but not at chest gets band help only for back.
 const bandHelps = (e, profile) => e.band && levelFor(profile, e.mg) === 1 && profile.equipment.includes('band');
@@ -199,15 +203,19 @@ function pickExercise(group, types, ctx, exclude, avoid = new Set(), neighbours 
     (e) => e.g.includes(group),
     (e) => e.g.length > 0,
   ];
-  const candidates = (fits, strict) => Object.entries(EXERCISES).filter(([id, e]) =>
-    types.includes(e.t) && !exclude.has(id) && usable(e, profile) && fits(e) && (!strict || noClash(id)));
+  const candidates = (fits, strict, fresh, stretch) => Object.entries(EXERCISES).filter(([id, e]) =>
+    types.includes(e.t) && !exclude.has(id) && usable(e, profile, stretch) && fits(e) && (!strict || noClash(id))
+    && (!fresh || !ctx.used[id]));
+  // Not yet in this workout first (one level up if needed), then repeats, then any group.
+  const passes = [[true, false, tiers.slice(0, 3)], [true, true, tiers.slice(0, 3)], [false, false, tiers]];
   let pool = [];
-  for (const strict of [true, false]) {
-    for (const fits of tiers) {
-      pool = candidates(fits, strict);
-      if (pool.length) break;
+  search: for (const strict of [true, false]) {
+    for (const [fresh, stretch, fitsList] of passes) {
+      for (const fits of fitsList) {
+        pool = candidates(fits, strict, fresh, stretch);
+        if (pool.length) break search;
+      }
     }
-    if (pool.length) break;
   }
   // Favour exercises at the user's level, in the focus muscle group, and not used yet today.
   const weights = pool.map(([id, e]) => {
@@ -268,8 +276,10 @@ const MG_SLOT = { back: 'pull', chest: 'push', shoulders: 'handstand', arms: 'pu
 
 function pickMuscle(mg, types, ctx, exclude, neighbours = [], extra = () => true) {
   const noClash = (id) => !neighbours.some((n) => exercisesClash(n, id));
-  const pool = Object.entries(EXERCISES).filter(([id, e]) =>
-    e.mg === mg && types.includes(e.t) && !exclude.has(id) && usable(e, ctx.profile) && noClash(id) && extra(e, id));
+  const poolOf = (fresh, stretch) => Object.entries(EXERCISES).filter(([id, e]) =>
+    e.mg === mg && types.includes(e.t) && !exclude.has(id) && usable(e, ctx.profile, stretch) && noClash(id) && extra(e, id)
+    && (!fresh || !ctx.used[id]));
+  const pool = [[true, false], [true, true], [false, false]].map(([f, st]) => poolOf(f, st)).find((x) => x.length) ?? [];
   let id;
   if (pool.length) {
     const weights = pool.map(([pid, e]) => {
@@ -283,6 +293,9 @@ function pickMuscle(mg, types, ctx, exclude, neighbours = [], extra = () => true
     id = pool[i][0];
     ctx.used[id] = (ctx.used[id] ?? 0) + 1;
     exclude.add(id);
+  } else if (mg === 'back' && types.includes('hold') && !types.includes('reps')) {
+    // No bar for a back hold: a core hold instead, so legs stay in the finisher.
+    return pickMuscle('core', types, ctx, exclude, neighbours, extra);
   } else {
     id = pickExercise(MG_SLOT[mg], types, ctx, exclude, new Set(), neighbours);
   }
@@ -306,6 +319,9 @@ function endBlock(ctx, ids) {
 function roundHold(ctx, fallback) {
   return ['chest', 'arms', 'legs', 'core'].includes(ctx.focus) ? ctx.focus : fallback;
 }
+
+// Whether a hold of this muscle group fits the user's level and equipment (no bar: no back hold).
+const canHold = (mg, ctx) => Object.values(EXERCISES).some((e) => e.mg === mg && e.t === 'hold' && usable(e, ctx.profile));
 
 // Opener muscles: pull + push; a Chest or Shoulders focus starts with the push.
 function openerPair(ctx) {
@@ -353,17 +369,19 @@ const BUILDERS = {
   // M3 · shoulders + core (+ a pull hold), 20–30s each, ×4.
   'skill-intervals'(target, ctx) {
     const { rand } = ctx;
-    const k = target >= 420 ? 3 : 2;
+    let k = target >= 420 ? 3 : 2;
+    const third = roundHold(ctx, 'back');
+    if (!canHold(third, ctx)) k = 2; // without a bar the round is shoulders + core
     const work = pick(rand, [20, 25, 30]);
     const roundRest = pick(rand, [30, 40]);
     const rounds = clamp(Math.round((target + roundRest) / (k * work + roundRest)), 3, 5);
     const ex = new Set();
-    // Not the handstand holds themselves: they're for the holds block.
-    const notHandstand = (e, id) => !HANDSTAND_HOLDS.includes(id);
+    // Not the handstand-type holds (frog stand included): they're kept for the holds block.
+    const notHandstand = (e) => !(e.g[0] === 'handstand' && e.t === 'hold');
     const ids = [pickMuscle('shoulders', ['reps', 'hold'], ctx, ex, [ctx.lastEx].filter(Boolean), notHandstand)];
     ids.push(pickMuscle('core', ['reps', 'hold'], ctx, ex, [ids[0]]));
     if (k === 3) {
-      ids.push(pickMuscle(roundHold(ctx, 'back'), ['hold'], ctx, ex, [ids[1], ids[0]]));
+      ids.push(pickMuscle(third, ['hold'], ctx, ex, [ids[1], ids[0]]));
     }
     endBlock(ctx, ids);
     return interval({ rounds, work, rest: 0, roundRest }, ids.map((id) => asItem(id, ctx)));

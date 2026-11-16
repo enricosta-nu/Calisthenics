@@ -133,7 +133,8 @@ test('the generator uses the level of each muscle group', async () => {
     const w = generateWorkout({ minutes: 60, plan: suggestPlan(60, rng(seed)), seed, profile });
     for (const it of w.blocks.flatMap((b) => b.items)) {
       const e = EXERCISES[it.ex];
-      if (e.mg && e.mg !== 'back') assert.ok(e.level <= 1, `${it.ex} above level 1`);
+      // Level 1 elsewhere, or one level up (never at the bar) to avoid a repeat.
+      if (e.mg && e.mg !== 'back') assert.ok(e.level <= 1 || (e.level === 2 && !e.needs.includes('bar')), `${it.ex} above level 1`);
     }
   }
 });
