@@ -1,0 +1,11 @@
+{
+  "name": "calisthenics",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bodyweight training PWA with skill progressions, set logging and a rest timer.",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test"
+  }
+}
