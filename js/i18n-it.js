@@ -256,6 +256,13 @@ export const IT = {
   'Last block done. Great work!': 'Ultimo blocco finito. Ottimo lavoro!',
   'Block done': 'Blocco finito',
   "Voice on. Let's train!": 'Voce attiva. Alleniamoci!',
+  '10 seconds. Next: {ex}': '10 secondi. Poi: {ex}',
+  '10 seconds': '10 secondi',
+  '10 seconds left': 'Ancora 10 secondi',
+  'Voice pace': 'Ritmo della voce',
+  Calm: 'Calmo',
+  Normal: 'Normale',
+  'countdowns and what comes next': 'conti alla rovescia e cosa viene dopo',
 
   // ---------- progress ----------
   'Muscle groups · last 4 weeks': 'Gruppi muscolari · ultime 4 settimane',
@@ -291,7 +298,6 @@ export const IT = {
   'Training profile': 'Profilo di allenamento',
   'Beeps during workouts': 'Segnali acustici',
   'Spoken cues': 'Indicazioni a voce',
-  '"Rest. Next: push-up"': '"Recupero. Poi: piegamenti"',
   Vibration: 'Vibrazione',
   'not on iPhone': 'non su iPhone',
   'Rest between blocks': 'Recupero tra i blocchi',

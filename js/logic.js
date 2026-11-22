@@ -27,7 +27,7 @@ export function defaultState() {
     lastBackup: null, // { at, sessions } when the last backup was made, and how many workouts it had
     // name: optional, to greet the user · recovery: seconds of rest between blocks ·
     // voice: spoken cues · vibrate: buzz on each change of phase
-    settings: { sound: true, suggestMinutes: 60, name: '', recovery: 90, voice: true, vibrate: true, lang: defaultLang() },
+    settings: { sound: true, suggestMinutes: 60, name: '', recovery: 90, voice: true, vibrate: true, voicePace: 'calm', lang: defaultLang() },
   };
 }
 
@@ -62,6 +62,7 @@ export function normalizeState(raw) {
       voice: typeof raw.settings?.voice === 'boolean' ? raw.settings.voice : base.settings.voice,
       vibrate: typeof raw.settings?.vibrate === 'boolean' ? raw.settings.vibrate : base.settings.vibrate,
       lang: ['en', 'it'].includes(raw.settings?.lang) ? raw.settings.lang : base.settings.lang,
+      voicePace: ['calm', 'normal'].includes(raw.settings?.voicePace) ? raw.settings.voicePace : base.settings.voicePace,
     },
   };
 }
