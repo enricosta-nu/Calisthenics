@@ -94,19 +94,37 @@ function unlockAudio() {
 }
 
 // Spoken cues, in the phone's own voice.
-function speak(text) {
+// Calm by default: slower, a little lower, and cues wait for each other instead of cutting in.
+// `interrupt` is for what must be heard on time (a new exercise, the countdown numbers).
+const VOICE_PACE = { calm: { rate: 0.85, pitch: 0.95 }, normal: { rate: 1, pitch: 1 } };
+
+function speak(text, { interrupt = false } = {}) {
   if (!state.settings.voice || !('speechSynthesis' in window) || !text) return;
   try {
-    speechSynthesis.cancel(); // the newest cue wins
+    if (interrupt && speechSynthesis.speaking) speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
+    const pace = VOICE_PACE[state.settings.voicePace] ?? VOICE_PACE.calm;
     u.lang = speechLang();
-    u.rate = 1.05;
+    u.rate = pace.rate;
+    u.pitch = pace.pitch;
+    const voice = bestVoice(u.lang);
+    if (voice) u.voice = voice;
     speechSynthesis.speak(u);
   } catch {
     /* speech not available */
   }
 }
 const speechLang = () => (getLang() === 'it' ? 'it-IT' : 'en-US');
+
+// The most natural voice the phone has for the language: "enhanced", "premium" or "natural"
+// voices first, then Google's, then any voice installed on the phone.
+function bestVoice(lang) {
+  const voices = speechSynthesis.getVoices?.() ?? [];
+  const base = lang.slice(0, 2);
+  const score = (v) => (/premium|enhanced|natural|neural/i.test(v.name) ? 4 : 0) + (/google/i.test(v.name) ? 2 : 0)
+    + (v.lang === lang ? 1 : 0) + (v.localService ? 0.5 : 0);
+  return voices.filter((v) => v.lang?.toLowerCase().startsWith(base)).sort((x, y) => score(y) - score(x))[0] ?? null;
+}
 
 const secondsSpoken = (n) => (n === 60 ? t('1 minute') : n % 60 === 0 ? t('{n} minutes', { n: n / 60 })
   : n > 60 ? t('1 minute {s} seconds', { s: n % 60 }) : t('{n} seconds', { n }));
@@ -148,7 +166,7 @@ function cueTick({ key, secs, remaining, into, kind, next }) {
   if (n >= 1 && n <= 3 && n !== ui.lastCount) {
     ui.lastCount = n;
     if (state.settings.voice && 'speechSynthesis' in window) {
-      speak(String(n));
+      speak(String(n), { interrupt: true });
       if (state.settings.vibrate && navigator.vibrate) navigator.vibrate(40);
     } else play('count');
   }
@@ -1004,6 +1022,7 @@ function renderSettings() {
         <span>${t('Spoken cues')} <span class="muted small">· ${t('countdowns and what comes next')}</span></span>
         <input type="checkbox" data-action="voice" ${state.settings.voice ? 'checked' : ''}>
       </label>
+      ${state.settings.voice ? `<div class="field"><span>${t('Voice pace')}</span>${chips('voice-pace', [{ id: 'calm', name: t('Calm') }, { id: 'normal', name: t('Normal') }], (id) => id === state.settings.voicePace, 'Voice pace')}</div>` : ''}
       <label class="field toggle">
         <span>${t('Vibration')} <span class="muted small">· ${t('not on iPhone')}</span></span>
         <input type="checkbox" data-action="vibrate" ${state.settings.vibrate ? 'checked' : ''}>
@@ -1181,7 +1200,7 @@ function tickRoutine(now) {
     if (!silent) {
       if (!pos.phase) play('done');
       else if (pos.phase.kind !== 'ready') play(pos.phase.kind);
-      speak(pos.phase ? phaseCue(block, pos.phase, a) : blockDoneCue(a));
+      speak(pos.phase ? phaseCue(block, pos.phase, a) : blockDoneCue(a), { interrupt: true });
     }
     render();
     return;
@@ -1253,8 +1272,8 @@ function endRecovery(auto = false) {
   play('work');
   if (auto && phases) {
     ui.phaseKey = `${a.block}:1`; // already in the first exercise: no repeat of the cue on the next tick
-    speak(phaseCue(block, phases[1], a));
-  } else speak(blockStartCue(a));
+    speak(phaseCue(block, phases[1], a), { interrupt: true });
+  } else speak(blockStartCue(a), { interrupt: true });
   save();
   render();
   window.scrollTo(0, 0);
@@ -1483,6 +1502,11 @@ const actions = {
   voice: (d, el) => {
     update(() => (state.settings.voice = el.checked));
     if (el.checked) { unlockAudio(); speak(t("Voice on. Let's train!")); }
+  },
+  'voice-pace': (d) => {
+    update(() => (state.settings.voicePace = d.id));
+    unlockAudio();
+    speak(t("Voice on. Let's train!"), { interrupt: true });
   },
   vibrate: (d, el) => {
     update(() => (state.settings.vibrate = el.checked));

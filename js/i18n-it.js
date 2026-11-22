@@ -259,6 +259,9 @@ export const IT = {
   '10 seconds. Next: {ex}': '10 secondi. Poi: {ex}',
   '10 seconds': '10 secondi',
   '10 seconds left': 'Ancora 10 secondi',
+  'Voice pace': 'Ritmo della voce',
+  Calm: 'Calmo',
+  Normal: 'Normale',
   'countdowns and what comes next': 'conti alla rovescia e cosa viene dopo',
 
   // ---------- progress ----------
