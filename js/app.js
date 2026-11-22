@@ -11,7 +11,7 @@ import {
   routineOf, blockRounds, timingFields, adjustTiming, applyOverrides,
   INTENSITY_RANGE, intensityOf, applyIntensity, intensify, FEELINGS, feelingOf, intensityAdvice, rateSession,
   trainingHistory, dayKey, effectiveProfile,
-  workoutTimeline, howToSteps, startRecovery, recoveryLeft, RECOVERY_OPTIONS,
+  workoutTimeline, howToSteps, READY_SECS, startRecovery, recoveryLeft, RECOVERY_OPTIONS,
   INTENSITY, levelFor, GROUP_FEELINGS, trainedGroups, rateGroup, groupAdvice, answerGroupAdvice, BACKUP_EVERY, workoutsSinceBackup,
 } from './logic.js';
 import { figureSvg, animateFigures } from './figures.js';
@@ -130,6 +130,37 @@ function blockStartCue(a) {
   return t('Get ready. {what}', { what: block.kind === 'interval' ? exSpoken(block.items[0]) : blockName(block) });
 }
 
+// Voice countdown for the timer: "10 seconds. Next: push-up" before an exercise, a single
+// beep halfway through it, and "3, 2, 1" at the end of every phase (beeps when the voice is off).
+function cueTick({ key, secs, remaining, into, kind, next }) {
+  if (ui.cueKey !== key) { ui.cueKey = key; ui.cues = {}; }
+  const c = ui.cues;
+  if (!c.ten && secs >= 15 && remaining <= 10.2 && remaining > 4) {
+    c.ten = true;
+    if (kind !== 'work') speak(next ? t('10 seconds. Next: {ex}', { ex: next }) : t('10 seconds'));
+    else if (secs >= 60) speak(t('10 seconds left'));
+  }
+  if (!c.half && kind === 'work' && secs >= 10 && into >= secs / 2) {
+    c.half = true;
+    if (secs - into > 4) play('half');
+  }
+  const n = Math.ceil(remaining);
+  if (n >= 1 && n <= 3 && n !== ui.lastCount) {
+    ui.lastCount = n;
+    if (state.settings.voice && 'speechSynthesis' in window) {
+      speak(String(n));
+      if (state.settings.vibrate && navigator.vibrate) navigator.vibrate(40);
+    } else play('count');
+  }
+}
+
+// The exercise a rest or get-ready leads into, as it's spoken.
+function nextSpoken(block, phase) {
+  if (phase.kind === 'rest') return exSpoken(phase.next);
+  if (phase.kind === 'ready') return block.kind === 'interval' ? exSpoken(block.items[0]) : blockName(block);
+  return '';
+}
+
 function blockDoneCue(a) {
   if (a.recovery) {
     const next = routineOf(a).blocks[a.block + 1];
@@ -143,6 +174,7 @@ const SOUNDS = {
   count: { notes: [[660, 0, 0.08]], vibrate: 40 },
   work: { notes: [[1320, 0, 0.15], [1320, 0.2, 0.3]], vibrate: [150, 80, 150] },
   rest: { notes: [[523, 0, 0.35]], vibrate: 300 },
+  half: { notes: [[988, 0, 0.18]], vibrate: 80 }, // halfway through an exercise
   done: { notes: [[880, 0, 0.2], [880, 0.25, 0.2], [1320, 0.5, 0.4]], vibrate: [200, 100, 200, 100, 400] },
 };
 
@@ -969,7 +1001,7 @@ function renderSettings() {
         <input type="checkbox" data-action="sound" ${state.settings.sound ? 'checked' : ''}>
       </label>
       <label class="field toggle">
-        <span>${t('Spoken cues')} <span class="muted small">· ${t('"Rest. Next: push-up"')}</span></span>
+        <span>${t('Spoken cues')} <span class="muted small">· ${t('countdowns and what comes next')}</span></span>
         <input type="checkbox" data-action="voice" ${state.settings.voice ? 'checked' : ''}>
       </label>
       <label class="field toggle">
@@ -1116,11 +1148,13 @@ function tickRoutine(now) {
   }
   const left = recoveryLeft(a, now);
   if (left != null) {
-    if (left <= 0) return endRecovery();
-    const secLeft = Math.ceil(left);
-    if (secLeft <= 3 && secLeft !== ui.lastCount && a.recovery.pausedAt == null) {
-      ui.lastCount = secLeft;
-      play('count');
+    if (left <= 0) return endRecovery(true);
+    if (a.recovery.pausedAt == null) {
+      const next = routineOf(a).blocks[a.block + 1];
+      cueTick({
+        key: `rec:${a.block}`, secs: a.recovery.secs, remaining: left, into: a.recovery.secs - left, kind: 'recovery',
+        next: next.kind === 'interval' ? exSpoken(next.items[0]) : blockName(next),
+      });
     }
     const clock = document.querySelector('[data-tick="rt-recover"]');
     if (clock) clock.textContent = formatClock(left);
@@ -1153,10 +1187,10 @@ function tickRoutine(now) {
     return;
   }
   if (!pos.phase) return;
-  const secLeft = Math.ceil(pos.remaining);
-  if (secLeft <= 3 && secLeft !== ui.lastCount && a.pausedAt == null) {
-    ui.lastCount = secLeft;
-    play('count');
+  if (a.pausedAt == null) {
+    cueTick({
+      key, secs: pos.phase.secs, remaining: pos.remaining, into: pos.into, kind: pos.phase.kind, next: nextSpoken(block, pos.phase),
+    });
   }
   const clock = document.querySelector('[data-tick="rt-clock"]');
   if (clock) clock.textContent = formatClock(pos.remaining);
@@ -1202,18 +1236,25 @@ function beginRoutine(base, step = 0, key = base.id) {
   window.scrollTo(0, 0);
 }
 
-// Rest is over (or skipped): on to the next block, its timer starting by itself.
-function endRecovery() {
+// Rest is over (or skipped): on to the next block, its timer starting by itself. When the rest
+// ran out (`auto`), its own countdown already led in, so the first exercise starts right away;
+// "Start now" keeps the 10-second get-ready to get into position.
+function endRecovery(auto = false) {
   const a = state.activeRoutine;
   a.recovery = null;
   a.block = Math.min(a.block + 1, a.results.length - 1);
   resetBlockTimer(a);
-  if (blockPhases(routineOf(a).blocks[a.block])) {
-    a.blockStartedAt = Date.now();
+  const block = routineOf(a).blocks[a.block];
+  const phases = blockPhases(block);
+  if (phases) {
+    a.blockStartedAt = Date.now() - (auto ? READY_SECS * 1000 : 0);
     if (a.results[a.block].status === 'todo') a.results[a.block].status = 'partial';
   }
   play('work');
-  speak(blockStartCue(a));
+  if (auto && phases) {
+    ui.phaseKey = `${a.block}:1`; // already in the first exercise: no repeat of the cue on the next tick
+    speak(phaseCue(block, phases[1], a));
+  } else speak(blockStartCue(a));
   save();
   render();
   window.scrollTo(0, 0);
